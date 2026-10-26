@@ -6,8 +6,10 @@
 		<image :src= icon   class="account-icon" />
 		<!-- <image src="https://favicon.im/hey.com" alt="hey.com favicon" /> -->
         <view class="account-info">
-          <text class="account-app">{{ app }} </text>
-          <!-- <text class="account-app">{{ app }}</text> -->
+          <view class="account-title">
+            <text class="account-app">{{ app }}</text>
+            <text v-if="pinned" class="pinned-flag">置顶</text>
+          </view>
           <text class="account-name">{{ name }}</text>
         </view>
       </view>
@@ -22,8 +24,9 @@
     <!-- 下部分 -->
     <view class="account-body">
 
-      <view class="account-code-container">
-        <text class="account-code">{{ code }}</text>
+      <view class="account-code-container" @click="onCopyCode">
+        <text v-if="unavailable" class="account-code-unavailable">配置不支持</text>
+        <text v-else class="account-code">{{ formattedCode }}</text>
       </view>
 
       <view class="account-right">
@@ -44,7 +47,7 @@
 //   window: 1 // 容错窗口
 // };
 //import sha1 from 'js-sha1';
-import { generateTOTP } from '../utils/finial';
+import { generateTOTP } from '../utils/totp-core';
 
 
 export default {
@@ -53,21 +56,57 @@ export default {
     icon: String,      // 图标
     app: String,       // 应用名称
     name: String,      // 用户名
-    secret: String     // TOTP 密钥
+    secret: String,     // TOTP 密钥
+    digits: {
+      type: Number,
+      default: 6,
+    },
+    period: {
+      type: Number,
+      default: 30,
+    },
+    algorithm: {
+      type: String,
+      default: 'SHA1',
+    },
+    timestampSeconds: {
+      type: Number,
+      default() {
+        return Math.floor(Date.now() / 1000);
+      },
+    },
+    pinned: {
+      type: Boolean,
+      default: false,
+    },
   },
   data() {
     return {
       code: '',         // 动态验证码
-      countdown: 30     // 倒计时
+      unavailable: false, // 配置不支持时置真，卡片显示提示而非验证码
+      countdown: 30,    // 倒计时
+      lastWindow: null, // 上一次的时间窗口，用于判断是否需要重新生成
     };
   },
-  created() {
-    this.startTOTP(); // 初始化 TOTP 逻辑
-    // console.log("!!!!!")
-    // console.log(this.code)
+  mounted() {
+    this.refresh();
   },
-  beforeDestroy() {
-    clearInterval(this.timer); // 清理定时器
+  watch: {
+    timestampSeconds() {
+      this.refresh();
+    },
+    period() {
+      this.invalidateCode();
+    },
+    secret() {
+      this.invalidateCode();
+    },
+    digits() {
+      this.invalidateCode();
+    },
+    algorithm() {
+      this.invalidateCode();
+    },
   },
   computed: {
       formattedIcon() {
@@ -75,49 +114,87 @@ export default {
         return `https://favicon.im/${this.name}.com`;
         // 也可以做更多的字符串操作，例如去除空格、转小写等
         // return `https://example.com/images/${this.icon.trim().toLowerCase()}.png`;
+      },
+      formattedCode() {
+        if (!this.code) {
+          return '';
+        }
+        if (this.digits === 8) {
+          return `${this.code.slice(0, 4)} ${this.code.slice(4)}`;
+        }
+        return `${this.code.slice(0, 3)} ${this.code.slice(3)}`;
       }
   },
   methods: {
     onMoreOptions() {
-      // 触发父组件提供的事件
+      const items = ['修改', this.pinned ? '取消置顶' : '置顶', '删除'];
       uni.showActionSheet({
-        itemList: ['修改', '删除'],
+        itemList: items,
         success: (res) => {
           if (res.tapIndex === 0) {
-            // 选择了“修改”选项
-            this.$emit('edit-account', this.id); 
+            this.$emit('edit-account', this.id);
           } else if (res.tapIndex === 1) {
-            // 选择了“删除”选项
+            this.$emit('toggle-pin', this.id);
+          } else if (res.tapIndex === 2) {
             this.$emit('delete-account', this.id);
           }
         },
-        fail: (err) => {
-          console.log('操作取消', err);
+        fail: () => {
+          // 操作取消
         }
       });
-      // this.$emit('more-options');
     },
-    startTOTP() {
-      // 设置定时器每秒更新
-      this.timer = setInterval(() => {
-        // 计算剩余时间
-        const remainingTime = 30 - (Math.floor(Date.now() / 1000) % 30);
-        this.countdown = remainingTime;
 
-        // 每次倒计时为 30 时重新生成验证码
-        if (remainingTime === 30) {
-          this.generateCode();
+    onCopyCode() {
+      if (this.unavailable) {
+        uni.showToast({ title: '该账户配置不支持，无法生成验证码', icon: 'none' });
+        return;
+      }
+      if (!this.code) {
+        uni.showToast({ title: '验证码尚未生成', icon: 'none' });
+        return;
+      }
+      uni.setClipboardData({
+        data: this.code,
+        success: () => {
+          uni.showToast({ title: '已复制', icon: 'none' });
+        },
+      });
+    },
+    refresh() {
+      const currentWindow = Math.floor(this.timestampSeconds / this.period);
+      this.countdown = this.period - (this.timestampSeconds % this.period);
+      if (currentWindow !== this.lastWindow) {
+        // 先生成再更新缓存：失败时 lastWindow 不前进，下一秒可重试；
+        // 配置变更由 invalidateCode 强制重算。
+        this.generateCode();
+        if (!this.unavailable) {
+          this.lastWindow = currentWindow;
         }
-      }, 1000);
+      }
+    },
 
-      this.generateCode(); // 初始化生成验证码
+    invalidateCode() {
+      // 影响验证码的配置变更时强制重算，不受窗口缓存限制。
+      this.lastWindow = null;
+      this.refresh();
     },
 
     generateCode() {
-      // this.generateTOTP(this.secret).then((resolvedCode) => {
-      //   this.code = resolvedCode; // 将解析后的验证码赋值给 this.code
-      // });
-      this.code=generateTOTP(this.secret);
+      try {
+        this.code = generateTOTP({
+          secret: this.secret,
+          timestampSeconds: this.timestampSeconds,
+          digits: this.digits,
+          period: this.period,
+          algorithm: this.algorithm,
+        });
+        this.unavailable = false;
+      } catch (error) {
+        console.error('验证码生成失败：', error);
+        this.code = '';
+        this.unavailable = true;
+      }
     },
   }
 
@@ -170,6 +247,20 @@ export default {
   color: #666; /* 使用灰色以区分重要程度 */
 }
 
+.account-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pinned-flag {
+  font-size: 11px;
+  color: #fff;
+  background-color: #007aff;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
 .more-options-button {
   background: none; /* 没有背景 */
   border: none; /* 没有边框 */
@@ -203,6 +294,12 @@ export default {
   font-size: 32px; /* 较大的字体显示验证码 */
   font-weight: bold; /* 加粗 */
   color: #333; /* 深色字体以增强可读性 */
+}
+
+.account-code-unavailable {
+  font-size: 16px;
+  font-weight: bold;
+  color: #b00020;
 }
 
 .account-right {

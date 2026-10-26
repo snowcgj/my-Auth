@@ -9,27 +9,41 @@
           <view class="icons">
             <button @click="onHelp" class="icon-button">❓</button>
             <button @click="onImport" class="icon-button">📥</button>
-            <button @click="onSearch" class="icon-button">🔍</button>
             <button @click="onExport" class="icon-button">📤</button>
-          </view>    
+          </view>
         </view>
        <!-- <button @click="saveAccounts">dd</button> -->
+    <view class="search-bar">
+      <input
+        :value="keyword"
+        @input="onSearchInput"
+        class="search-input"
+        placeholder="搜索服务或账户"
+      />
+    </view>
+
     <!-- 账号列表 -->
-    <view class="account-list" >
+    <view class="account-list">
       <AccountItem
-        v-for="account in accounts"
+        v-for="account in displayAccounts"
         :key="account.id"
         :id="account.id"
         :icon="account.icon"
         :app="account.app"
         :name="account.name"
-        :code="account.code"
-        :countdown="account.countdown"
         :secret="account.secret"
+        :digits="account.digits"
+        :period="account.period"
+        :algorithm="account.algorithm"
+        :pinned="account.pinned"
+        :timestamp-seconds="now"
         @delete-account="onDeleteAccount"
         @edit-account="onEditAccount"
-        @more-options="onMoreOptions(account)"
+        @toggle-pin="onTogglePin"
       />
+      <view v-if="displayAccounts.length === 0" class="empty-tip">
+        <text>没有匹配的账户</text>
+      </view>
     </view>
 
     <!-- 浮动添加按钮 -->
@@ -39,6 +53,8 @@
 
 <script>
 import AccountItem from '@/components/AccountItem.vue';
+import { parseOtpAuthUri } from '@/utils/otpauth.js';
+import { normalizeAccount } from '@/utils/account.js';
 
 
 export default {
@@ -47,73 +63,118 @@ export default {
   },
   data() {
     return {
-      accounts: [
-        {
-          id: 1,
-          icon: '/static/logo.png',
-          app: 'qq',
-          name: 'snowcgj',
-          code: '585 316',
-          countdown: 29,
-          secret: 'JBSWY3DPEHPK3PXP',
-        },
-        // {
-        //   id: 2,
-        //   icon: '/static/logo.png', // 没有图标时使用默认图标
-        //   app: 'hey',
-        //   name: 'user@example.com',
-        //   code: '855 954',
-        //   countdown: 29,
-        //   secret: 'JBSWY3DPEHPK3PXP'
-        // },
-        // {
-        //   id: 3,
-        //   icon: '/static/logo.png', // 没有图标时使用默认图标
-        //   app: 'intagram',
-        //   name: 'user@example.com',
-        //   code: '855 954',
-        //   countdown: 29,
-        //   secret: 'RX5N7QPUYI6BOT7UDQPN54AFSF2QQMJV'
-        // },
-      ]
+      now: Math.floor(Date.now() / 1000),
+      timer: null,
+      keyword: '',
+      accounts: [],
     };
   },
   mounted() {
-    // 读取本地存储的 accounts 数据
-    uni.getStorage({
-      key: 'accounts',
-      success: (res) => {
-        this.accounts = res.data || []; // 如果数据不存在，则初始化为空数组
-        console.log('Accounts loaded:', this.accounts);
-      },
-      fail: (err) => {
-        console.error('Failed to load accounts:', err);
-      },
-    });
+    this.startClock();
+    this.loadAccounts();
   },
-  watch: {
-      accounts: {
-        handler(newAccounts) {
-          this.saveAccounts(); // 数据变化时自动保存
-        },
-        deep: true, // 深度监听，确保内部属性的变化也被捕获
-      },
+  onShow() {
+    // 回到前台时立即刷新时间，避免后台节流导致验证码停留在旧窗口
+    this.now = Math.floor(Date.now() / 1000);
+  },
+  beforeUnmount() {
+    this.stopClock();
+  },
+  computed: {
+    displayAccounts() {
+      const keyword = this.keyword.trim().toLowerCase();
+      const filtered = keyword
+        ? this.accounts.filter(account => {
+            const text = [account.app, account.name, account.issuer, account.accountName]
+              .filter(value => value)
+              .join(' ')
+              .toLowerCase();
+            return text.includes(keyword);
+          })
+        : this.accounts.slice();
+
+      return filtered.sort((previous, next) => {
+        if (previous.pinned !== next.pinned) {
+          return previous.pinned ? -1 : 1;
+        }
+        if (previous.sortOrder !== next.sortOrder) {
+          return previous.sortOrder - next.sortOrder;
+        }
+        return previous.id - next.id;
+      });
+    },
   },
   methods: {
+    startClock() {
+      this.stopClock();
+      this.timer = setInterval(() => {
+        this.now = Math.floor(Date.now() / 1000);
+      }, 1000);
+    },
+
+    stopClock() {
+      if (this.timer) {
+        clearInterval(this.timer);
+        this.timer = null;
+      }
+    },
+
+    loadAccounts() {
+      // 读取本地账户；getStorage 的 fail 无法区分"无数据"与"真实错误"，
+      // 故 fail 时按空列表处理。已移除深度 watcher，不会在读取时回写覆盖原存储。
+      uni.getStorage({
+        key: 'accounts',
+        success: (res) => {
+          const stored = Array.isArray(res.data) ? res.data : [];
+          this.accounts = stored.map(account => normalizeAccount(account));
+        },
+        fail: () => {
+          this.accounts = [];
+        },
+      });
+    },
+
+    onSearchInput(event) {
+      this.keyword = event.detail.value;
+    },
+
     // 删除账户
     onDeleteAccount(accountId) {
-      console.log("acconutId:")
-      console.log(accountId)
+      const account = this.accounts.find(item => item.id === accountId);
+      if (!account) {
+        return;
+      }
 
-      console.log("之前的")
-      console.log(this.accounts)
+      uni.showModal({
+        title: '删除账户',
+        content: `${account.app} / ${account.name}`,
+        confirmText: '删除',
+        cancelText: '取消',
+        success: (result) => {
+          if (!result.confirm) {
+            return;
+          }
+          const next = this.accounts.filter(item => item.id !== accountId);
+          if (!this.persistAccounts(next)) {
+            uni.showToast({ title: '保存失败，删除未生效', icon: 'none' });
+            return;
+          }
+          this.accounts = next;
+        },
+      });
+    },
 
-      this.accounts = this.accounts.filter(account => account.id !== accountId);
-
-      console.log("删除之后的")
-      console.log(this.accounts)
-
-      this.saveAccounts();
+    onTogglePin(accountId) {
+      const next = this.accounts.map(account =>
+        account.id === accountId
+          ? { ...account, pinned: !account.pinned }
+          : account
+      );
+      if (!this.persistAccounts(next)) {
+        uni.showToast({ title: '保存失败，置顶未生效', icon: 'none' });
+        return;
+      }
+      this.accounts = next;
     },
 
     // 修改账户，跳转到编辑页面
@@ -165,7 +226,6 @@ export default {
         const accountsStr = localStorage.getItem('accounts');
         if (accountsStr) {
           this.accounts = JSON.parse(accountsStr);
-          console.log('Accounts loaded from localStorage:', this.accounts);
         }
       } else {
         // APP 和小程序：使用 FileSystemManager
@@ -175,7 +235,6 @@ export default {
           encoding: 'utf8',
           success: (res) => {
             this.accounts = JSON.parse(res.data);
-            console.log('Accounts loaded from file:', this.accounts);
           },
           fail: (err) => {
             console.error('Failed to load accounts:', err);
@@ -195,16 +254,6 @@ export default {
         duration: 2000
       })  
     },
-    onSearch() {
-      uni.showToast({
-        title: '功能暂未开发，敬请期待',
-        //将值设置为 success 或者直接不用写icon这个参数
-        icon: 'error',
-        //显示持续时间为 2秒
-        duration: 2000
-      })  
-      console.log('搜索功能被点击');
-    },
     onHelp() {
       uni.showToast({
         title: '功能暂未开发，敬请期待',
@@ -212,7 +261,7 @@ export default {
         icon: 'error',
         //显示持续时间为 2秒
         duration: 2000
-      })  
+      })
       console.log('帮助功能被点击');
     },
     onImport() {
@@ -228,11 +277,10 @@ export default {
     //   console.log('编辑账户', account);
     // },
     onMoreOptions(account) {
-      console.log('更多选项被点击', account);
+      // 预留入口，不输出账户对象
     },
 
     onAddAccount() {
-      console.log('添加账户按钮被点击');
       uni.showActionSheet({
       itemList: ['扫描二维码'], // 提示选项
       success: (res) => {
@@ -258,8 +306,7 @@ export default {
     scanQRCode() {
       uni.scanCode({
         success: (res) => {
-          console.log('扫描成功：', res.result);
-          this.parseQRCode(res.result); // 调用解析方法
+          this.parseQRCode(res.result);
         },
         fail: (err) => {
           console.error('扫描失败：', err);
@@ -281,51 +328,39 @@ export default {
         }
       });
     },
-    parseQRCode(data ) {    // data删了
-      if (!data.startsWith('otpauth://')) {
-        uni.showToast({ title: '无法识别的二维码', icon: 'none' });
+    parseQRCode(data) {
+      let parsed;
+      try {
+        parsed = parseOtpAuthUri(data);
+      } catch (error) {
+        uni.showToast({ title: '无法识别或不支持的二维码', icon: 'none' });
         return;
       }
-      // let data="otpauth://totp/MyApp:user%40example.com?secret=AAJBI6STPH2XTQ3HSAU2BLUCMPIFN47G&issuer=MyApp"
-      try {
-        // 1️⃣ 拆分协议和查询参数
-      const [protocolAndPath, queryString] = data.split('?');
-      // otpauth     :   //totp/MyApp    :     user%40example.com
-      // secret=AAJBI6STPH2XTQ3HSAU2BLUCMPIFN47G&issuer=MyApp
-      const secret=queryString.split('=')[1].split('&')[0]
-      const name=queryString.split('=').pop();
-      const user=protocolAndPath.split(':').pop()
-      const username=user.split('%')[0]
-      //const username = decodeURIComponent(accountInfo); // 用户名
-      if (!secret) {
-          uni.showToast({ title: '无效的二维码内容', icon: 'none' });
-          return;
-      }
-      console.log(secret)
-      console.log(name)
-      console.log(user)
-      console.log(username)
-      // console.log(appInfo)
-       //  添加解析后的账户信息
-        this.addAccount({
-          id: Date.now(),
-          icon: '/static/logo.png',    // 默认图标
-          app: name || 'Unknown App',
-          name: username|| 'Unknown Account',
-          code: '',       // 动态验证码稍后生成
-          countdown: 30,
-          secret: secret
-        });
 
-        } catch (error) {
-
-          console.error('二维码解析失败：', error);
-          uni.showToast({ title: '二维码解析失败', icon: 'none' });
-        }
+      this.addAccount({
+        id: Date.now(),
+        icon: '/static/logo.png',
+        app: parsed.issuer || parsed.accountName,
+        name: parsed.accountName,
+        issuer: parsed.issuer,
+        accountName: parsed.accountName,
+        secret: parsed.secret,
+        algorithm: parsed.algorithm,
+        digits: parsed.digits,
+        period: parsed.period,
+        pinned: false,
+        sortOrder: Date.now(),
+        code: '',
+        countdown: 30,
+      });
     },
     addAccount(account) {
-      this.accounts.push(account);
-      this.saveAccounts();
+      const next = [...this.accounts, account];
+      if (!this.persistAccounts(next)) {
+        uni.showToast({ title: '保存失败，未添加账户', icon: 'none' });
+        return;
+      }
+      this.accounts = next;
       uni.showToast({ title: '账户添加成功', icon: 'success' });
     },
     // saveAccounts() {
@@ -341,12 +376,14 @@ export default {
     //       }
     //     });
     // },
-    saveAccounts() {
+    persistAccounts(nextAccounts) {
+      // 同步写入并返回结果；调用方据此决定是否更新内存与提示。
       try {
-        uni.setStorageSync('accounts', this.accounts); 
-        console.log('数据已保存:', this.accounts);
+        uni.setStorageSync('accounts', nextAccounts);
+        return true;
       } catch (error) {
-        console.error('数据存储失败:', error);
+        console.error('账户数据存储失败');
+        return false;
       }
     },
     getIcon(appName) {
@@ -428,5 +465,26 @@ justify-content: center;
 
 .account-list::-webkit-scrollbar {
   display: none; /* 隐藏滚动条（针对 WebKit 浏览器） */
+}
+
+.search-bar {
+  padding: 8px 15px;
+  background-color: #ffffff;
+  border-bottom: 0.5px solid #e0e0e0;
+}
+
+.search-input {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background-color: #f0f0f5;
+  font-size: 14px;
+}
+
+.empty-tip {
+  padding: 40px 0;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
 }
 </style>

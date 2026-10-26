@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "test": "node --experimental-default-type=module --test tests/totp-core.test.mjs tests/otpauth.test.mjs tests/account.test.mjs"
+  },
   "dependencies": {
     "crypto-js": "^4.2.0",
     "js-sha1": "^0.7.0"
