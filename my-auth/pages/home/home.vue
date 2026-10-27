@@ -23,6 +23,7 @@
         <text class="empty-description">扫描网站提供的验证二维码
 下次登录，验证码就在这里。</text>
         <button class="ui-primary empty-action" hover-class="ui-tap" @click="scanQRCode"><AppIcon name="scan" :size="18" light /><text class="ui-button-label">扫描二维码</text></button>
+        <button v-if="imageImportAvailable" class="restore-link image-link" hover-class="ui-tap" @click="onImportImage"><AppIcon name="image" :size="17" /><text>从相册识别</text></button>
         <button class="restore-link" hover-class="ui-tap" @click="openRestore">已有备份？从文件恢复</button>
         <view class="privacy-note"><AppIcon name="lock" :size="13" /><text>验证码可离线生成 · 无需注册</text></view>
       </view>
@@ -39,7 +40,7 @@
       </view>
     </view>
     <button v-if="accounts.length && !loadError" class="add-account" hover-class="ui-tap" @click="onAddAccount"><AppIcon name="plus" :size="20" light /><text>添加账户</text></button>
-    <ActionSheet :open="addSheetOpen" title="添加账户" subtitle="扫描网站提供的验证二维码。" :actions="addActions" @close="addSheetOpen = false" @select="onAddAction" />
+    <ActionSheet :open="addSheetOpen" title="添加账户" subtitle="扫描验证二维码，或从图片中识别。" :actions="addActions" @close="addSheetOpen = false" @select="onAddAction" />
     <ActionSheet :open="!!menuAccount" :title="menuAccount ? menuAccount.app : '账户'" :subtitle="menuAccount ? menuAccount.name : ''" :actions="accountActions" @close="menuAccountId = null" @select="onAccountAction" />
     <AppDialog :open="!!dialog" :title="dialog ? dialog.title : ''" :description="dialog ? dialog.description : ''" :icon="dialog && dialog.type === 'delete' ? 'trash' : 'info'" :danger="!!dialog && dialog.type === 'delete'" :show-cancel="!!dialog && dialog.type === 'delete'" :confirm-text="dialog && dialog.type === 'delete' ? '删除账户' : '知道了'" @cancel="dialog = null" @confirm="onDialogConfirm">
       <template v-if="dialog && dialog.type === 'delete'">
@@ -49,6 +50,7 @@
       <text v-else-if="dialog" class="dialog-copy">{{ dialog.description }}</text>
     </AppDialog>
     <AppToast ref="notice" />
+    <BusyOverlay :open="imageBusy" :title="imageBusyTitle" :description="imageBusyDescription" icon="image" />
   </view>
 </template>
 
@@ -59,31 +61,36 @@ import AppIcon from '@/components/AppIcon.vue';
 import ActionSheet from '@/components/ActionSheet.vue';
 import AppDialog from '@/components/AppDialog.vue';
 import AppToast from '@/components/AppToast.vue';
+import BusyOverlay from '@/components/BusyOverlay.vue';
+import { scanSystemImage, supportsSystemImageScan } from '@/utils/platform-image.js';
+import { waitForFeedback } from '@/utils/feedback-render.js';
 import { parseOtpAuthUri } from '@/utils/otpauth.js';
 import { normalizeAccount } from '@/utils/account.js';
 import { readBackupSummary } from '@/utils/backup-summary.js';
 
 export default {
-  components: { AccountItem, AppHeader, AppIcon, ActionSheet, AppDialog, AppToast },
+  components: { AccountItem, AppHeader, AppIcon, ActionSheet, AppDialog, AppToast, BusyOverlay },
   data() {
     return {
       now: Math.floor(Date.now() / 1000), timer: null, keyword: '', accounts: [],
       loading: true, loadError: '', pageVisible: false, addSheetOpen: false, menuAccountId: null,
       dialog: null,
+      imageImportAvailable: false, imageBusy: false, imageStage: 'pick', imageOperation: 0, homeDisposed: false,
       backupSummary: { state: 'unavailable', title: '备份状态暂不可用' },
-      addActions: [{ value: 'scan', label: '扫描二维码', icon: 'scan' }],
     };
   },
   onShow() {
+    this.imageImportAvailable = supportsSystemImageScan();
     this.pageVisible = true;
     this.now = Math.floor(Date.now() / 1000);
     this.loadAccounts();
     this.startClock();
   },
   onHide() { this.pageVisible = false; this.stopClock(); this.addSheetOpen = false; this.menuAccountId = null; this.dialog = null; this.$refs.notice?.clear(); },
-  onUnload() { this.pageVisible = false; this.stopClock(); },
-  beforeUnmount() { this.pageVisible = false; this.stopClock(); },
+  onUnload() { this.pageVisible = false; this.stopClock(); this.invalidateImageImport(); },
+  beforeUnmount() { this.pageVisible = false; this.stopClock(); this.invalidateImageImport(); },
   onBackPress() {
+    if (this.imageBusy) return true;
     if (this.dialog) { this.dialog = null; return true; }
     if (this.menuAccountId !== null) { this.menuAccountId = null; return true; }
     if (this.addSheetOpen) { this.addSheetOpen = false; return true; }
@@ -94,6 +101,13 @@ export default {
     accounts() { this.backupSummary = readBackupSummary(this.accounts); },
   },
   computed: {
+    addActions() {
+      const actions = [{ value: 'scan', label: '扫描二维码', icon: 'scan' }];
+      if (this.imageImportAvailable) actions.push({ value: 'image', label: '从相册识别', icon: 'image' });
+      return actions;
+    },
+    imageBusyTitle() { return { pick: '选择二维码图片', read: '正在读取图片', recognize: '正在识别二维码' }[this.imageStage]; },
+    imageBusyDescription() { return this.imageStage === 'pick' ? '请在系统窗口选择一张二维码图片。' : '图片仅在本机处理，不会上传。请稍候。'; },
     menuAccount() { return this.accounts.find(account => account.id === this.menuAccountId) || null; },
     accountActions() {
       return [
@@ -118,6 +132,42 @@ export default {
     },
   },
   methods: {
+    invalidateImageImport() { this.homeDisposed = true; this.imageOperation += 1; this.imageBusy = false; },
+    async onImportImage() {
+      if (this.imageBusy || this.loadError || this.homeDisposed) return;
+      this.addSheetOpen = false;
+      this.dialog = null;
+      this.$refs.notice?.clear();
+      this.imageBusy = true;
+      const operation = ++this.imageOperation;
+      const isCancelled = () => this.homeDisposed || operation !== this.imageOperation;
+      try {
+        const result = await scanSystemImage({
+          isCancelled,
+          onStage: async stage => {
+            if (isCancelled()) return;
+            this.imageStage = stage;
+            await waitForFeedback(() => this.$nextTick());
+          },
+        });
+        if (isCancelled() || result.cancelled) return;
+        // 原生选择器期间账户可能改变；重读失败时不按空列表添加覆盖。
+        this.loadAccounts();
+        if (!this.loadError) this.parseQRCode(result.text);
+      } catch (error) {
+        if (isCancelled()) return;
+        const code = error && error.message;
+        const messages = {
+          IMAGE_NO_QR: '没有识别到二维码。请使用清晰、完整的二维码截图，也可以尝试相机扫描。',
+          IMAGE_TOO_LARGE: '图片超过 20MB。请截取二维码区域后重试。',
+          IMAGE_TYPE_INVALID: '请选择图片文件。建议使用 PNG 或 JPEG 截图。',
+          NATIVE_OPERATION_BUSY: '请先完成当前系统文件选择，再重新尝试。',
+          ANDROID_ONLY: '当前平台暂不支持从系统相册识别，请使用相机扫描。',
+        };
+        console.warn('[ImageScan]', this.imageStage, /^[A-Z_]+$/.test(code || '') ? code : 'IMAGE_SCAN_FAILED');
+        this.dialog = { type: 'info', title: '暂时无法识别图片', description: messages[code] || '图片读取或识别失败。请尝试 PNG/JPEG 截图，或使用相机扫描。' };
+      } finally { if (!isCancelled()) this.imageBusy = false; }
+    },
     showNotice(message, kind = 'success') { this.$refs.notice?.show(message, kind); },
     startClock() {
       this.stopClock();
@@ -145,10 +195,11 @@ export default {
     openSettings() { uni.navigateTo({ url: '/pages/settings/settings' }); },
     openBackup() { uni.navigateTo({ url: '/pages/backup/backup' }); },
     openRestore() { uni.navigateTo({ url: '/pages/backup/backup?intent=restore' }); },
-    onAddAccount() { if (!this.loadError) this.addSheetOpen = true; },
+    onAddAccount() { if (!this.loadError && !this.imageBusy) this.addSheetOpen = true; },
     onAddAction(action) {
       this.addSheetOpen = false;
       if (action === 'scan') this.scanQRCode();
+      if (action === 'image') this.onImportImage();
     },
     onAccountAction(action) {
       const account = this.menuAccount;
@@ -195,6 +246,7 @@ export default {
       this.accounts = next;
     },
     scanQRCode() {
+      if (this.imageBusy) return;
       uni.scanCode({
         success: (res) => {
           this.parseQRCode(res.result);
@@ -210,7 +262,7 @@ export default {
       try {
         parsed = parseOtpAuthUri(data);
       } catch (error) {
-        this.dialog = { type: 'info', title: '暂时无法添加', description: '请扫描网站提供的动态验证码二维码。目前支持 SHA-1 TOTP，其他类型暂不能添加。' };
+        this.dialog = { type: 'info', title: '暂时无法添加', description: '请扫描网站提供的 TOTP 验证二维码。支持 SHA-1、SHA-256、SHA-512，6 或 8 位验证码，30 或 60 秒周期；暂不支持 HOTP。' };
         return;
       }
 
@@ -273,6 +325,7 @@ export default {
 .empty-description { display: block; margin-top: 12px; font-size: 13px; line-height: 1.9; color: var(--auth-muted); white-space: pre-line; }
 .empty-action { width: 180px; margin: 26px auto 0; }
 .restore-link { display: block; margin: 15px auto 0; padding: 9px; background: transparent; color: #7c856f; font-size: 13px; line-height: 1.7; }
+.image-link { display: flex; align-items: center; justify-content: center; margin-top: 12px; }.image-link text { margin-left: 7px; }
 .privacy-note { display: flex; align-items: center; justify-content: center; margin-top: 38px; color: #939b88; font-size: 11px; }
 .privacy-note text { margin-left: 5px; }
 .search-empty { display: flex; align-items: center; flex-direction: column; padding-top: 70px; text-align: center; }

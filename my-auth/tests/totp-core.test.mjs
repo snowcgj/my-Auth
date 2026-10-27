@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import CryptoJS from 'crypto-js';
 import {
     decodeBase32,
     generateTOTP,
@@ -26,10 +27,10 @@ function encodeBase32(bytes) {
     return encoded;
 }
 
-function referenceTOTP(keyBytes, timestampSeconds, digits, period) {
+function referenceTOTP(keyBytes, timestampSeconds, digits, period, algorithm = 'SHA1') {
     const message = Buffer.alloc(8);
     message.writeBigUInt64BE(BigInt(Math.floor(timestampSeconds / period)));
-    const digest = createHmac('sha1', keyBytes).update(message).digest();
+    const digest = createHmac(algorithm.toLowerCase(), keyBytes).update(message).digest();
     const offset = digest[digest.length - 1] & 0x0f;
     const binary =
         ((digest[offset] & 0x7f) << 24) |
@@ -39,44 +40,48 @@ function referenceTOTP(keyBytes, timestampSeconds, digits, period) {
     return (binary % 10 ** digits).toString().padStart(digits, '0');
 }
 
-test('RFC 6238 SHA-1 eight-digit vectors', () => {
-    const cases = [
-        [59, '94287082'],
-        [1111111109, '07081804'],
-        [1111111111, '14050471'],
-        [1234567890, '89005924'],
-        [2000000000, '69279037'],
-        [20000000000, '65353130']
-    ];
-
-    for (const [timestampSeconds, expected] of cases) {
-        const actual = generateTOTP({
-            secret: RFC_SHA1_SECRET,
-            timestampSeconds,
-            algorithm: 'SHA1',
-            digits: 8,
-            period: 30
+// RFC 6238 附录 A/B：三种算法分别使用 20、32、64 字节 ASCII 密钥。
+const RFC_KEYS = {
+    SHA1: '12345678901234567890',
+    SHA256: '12345678901234567890123456789012',
+    SHA512: '1234567890123456789012345678901234567890123456789012345678901234'
+};
+const RFC_VECTORS = [
+    [59, '94287082', '46119246', '90693936'],
+    [1111111109, '07081804', '68084774', '25091201'],
+    [1111111111, '14050471', '67062674', '99943326'],
+    [1234567890, '89005924', '91819424', '93441116'],
+    [2000000000, '69279037', '90698825', '38618901'],
+    [20000000000, '65353130', '77737706', '47863826']
+];
+for (const [index, algorithm] of Object.keys(RFC_KEYS).entries()) {
+    for (const [timestampSeconds, ...expected] of RFC_VECTORS) {
+        test(`RFC 6238 ${algorithm} at ${timestampSeconds}`, () => {
+            const secret = encodeBase32(Buffer.from(RFC_KEYS[algorithm], 'ascii'));
+            assert.equal(generateTOTP({ secret, timestampSeconds, algorithm, digits: 8, period: 30 }), expected[index]);
+            assert.equal(generateTOTP({ secret, timestampSeconds, algorithm, digits: 6, period: 30 }), expected[index].slice(-6));
         });
-        assert.equal(actual, expected);
     }
-});
+}
 
 test('Node crypto reference matrix', () => {
-    const keyLengths = [1, 2, 3, 7, 10, 20, 31, 32, 55, 63, 64, 65, 100, 128];
+    const keyLengths = [1, 2, 3, 7, 10, 20, 31, 32, 55, 63, 64, 65, 100, 127, 128, 129, 200];
     const timestamps = [0, 1, 29, 30, 59, 60, 1111111109, 1234567890];
 
-    for (const keyLength of keyLengths) {
+    for (const algorithm of ['SHA1', 'SHA256', 'SHA512']) {
+      for (const keyLength of keyLengths) {
         const keyBytes = Uint8Array.from({ length: keyLength }, (_, index) => (index * 37 + 11) % 256);
         const secret = encodeBase32(keyBytes);
         for (const timestampSeconds of timestamps) {
             for (const digits of [6, 8]) {
                 for (const period of [30, 60]) {
-                    const actual = generateTOTP({ secret, timestampSeconds, digits, period });
-                    const expected = referenceTOTP(keyBytes, timestampSeconds, digits, period);
+                    const actual = generateTOTP({ secret, timestampSeconds, digits, period, algorithm });
+                    const expected = referenceTOTP(keyBytes, timestampSeconds, digits, period, algorithm);
                     assert.equal(actual, expected);
                 }
             }
         }
+    }
     }
 });
 
@@ -127,9 +132,11 @@ test('time windows beyond 32 bits match Node crypto', () => {
     const keyBytes = Uint8Array.from({ length: 20 }, (_, index) => index + 20);
     const secret = encodeBase32(keyBytes);
     const timestampSeconds = 30 * 2 ** 32;
-    const actual = generateTOTP({ secret, timestampSeconds, digits: 8, period: 30 });
-    const expected = referenceTOTP(keyBytes, timestampSeconds, 8, 30);
-    assert.equal(actual, expected);
+    for (const algorithm of ['SHA1', 'SHA256', 'SHA512']) {
+        const actual = generateTOTP({ secret, timestampSeconds, digits: 8, period: 30, algorithm });
+        const expected = referenceTOTP(keyBytes, timestampSeconds, 8, 30, algorithm);
+        assert.equal(actual, expected);
+    }
 });
 
 test('Base32 accepts defined formatting forms', () => {
@@ -171,8 +178,9 @@ test('unsupported or invalid TOTP options fail explicitly', () => {
         algorithm: 'SHA1'
     };
 
-    assert.throws(() => generateTOTP({ ...valid, algorithm: 'SHA256' }), /SHA1/);
-    assert.throws(() => generateTOTP({ ...valid, algorithm: 'SHA512' }), /SHA1/);
+    for (const algorithm of ['SHA384', 'MD5', '', 'SHA-256']) {
+        assert.throws(() => generateTOTP({ ...valid, algorithm }), /algorithm/);
+    }
     assert.throws(() => generateTOTP({ ...valid, digits: 7 }), /6 or 8/);
     assert.throws(() => generateTOTP({ ...valid, digits: '6' }), /6 or 8/);
     assert.throws(() => generateTOTP({ ...valid, period: 45 }), /30 or 60/);
@@ -191,4 +199,17 @@ test('equivalent SHA1 spelling is normalized', () => {
         algorithm: ' sha1 '
     });
     assert.equal(actual.length, 8);
+});
+
+test('SHA2 spelling is normalized and TOTP never needs random bytes', () => {
+    const random = CryptoJS.lib.WordArray.random;
+    CryptoJS.lib.WordArray.random = () => { throw new Error('TOTP_MUST_NOT_USE_RANDOM'); };
+    try {
+        for (const algorithm of ['SHA256', 'SHA512']) {
+            const input = { secret: PUBLIC_TEST_SECRET, timestampSeconds: 59 };
+            assert.equal(generateTOTP({ ...input, algorithm: ` ${algorithm.toLowerCase()} ` }), generateTOTP({ ...input, algorithm }));
+            assert.match(generateTOTP({ ...input, algorithm }), /^\d{6}$/);
+        }
+        assert.equal(generateTOTP({ secret: RFC_SHA1_SECRET, timestampSeconds: 1111111109, digits: 8 }), '07081804');
+    } finally { CryptoJS.lib.WordArray.random = random; }
 });

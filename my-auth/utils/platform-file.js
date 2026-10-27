@@ -12,26 +12,14 @@
 // TextDecoder，与 crypto-js 因 window.crypto 不可用挂掉同理）。
 // 不输出内容/密钥/完整 URI。
 
+import { launchActivityForResult } from './activity-result.js';
+
 const RESULT_OK = -1;
 // 文件大小限制：导出内容上限 64KB（约 200-300 账户，个人使用足够），
 // 导入文件上限 1MB（允许读取稍大文件，拒绝明显异常的大文件防耗尽内存）。
 // 两者不统一为同一值：导出是写出内容（应小），导入是读入文件（允许略大但要有上限）。
 const MAX_EXPORT_BYTES = 64 * 1024;
 const MAX_IMPORT_BYTES = 1024 * 1024;
-
-// 防重复操作：文件选择器是异步的，用户可在等待期间再次点击。
-// operationInProgress 标志确保同一时刻只有一个 SAF 操作进行中。
-let operationInProgress = false;
-
-function beginOperation() {
-  if (operationInProgress) return false;
-  operationInProgress = true;
-  return true;
-}
-
-function endOperation() {
-  operationInProgress = false;
-}
 
 function buildIntent(action, filename) {
   const Intent = plus.android.importClass('android.content.Intent');
@@ -261,119 +249,59 @@ export function writeSafJsonVerified(resolver, uri, content) {
   }
 }
 
-export function pickFileForSave(filename, content, callback) {
-  if (!beginOperation()) {
-    callback({ error: '操作进行中，请等待完成' });
-    return;
-  }
-  const Intent = plus.android.importClass('android.content.Intent');
-  const intent = buildIntent(Intent.ACTION_CREATE_DOCUMENT, filename);
-  const Activity = plus.android.runtimeMainActivity();
-
-  console.log('[SAF-callback] pickFileForSave starting');
-  // 用 onActivityResult 覆盖写法：三参数带 callback 的 startActivityForResult 在本机不触发回调。
-  // 参 DCloud 官方问答案例：两参数 startActivityForResult + main.onActivityResult 赋值。
-  Activity.onActivityResult = function (requestCode, resultCode, data) {
-    console.log('[SAF-callback] save onActivityResult triggered', 'requestCode=', requestCode, 'resultCode=', resultCode);
-    if (requestCode !== 2001) return;
-    if (resultCode !== RESULT_OK || !data) {
-      callback({ cancelled: true });
-      endOperation();
-      return;
-    }
-    try {
-      // 返回的 data 是 Java Intent，必须 importClass 后才能调 getData()
+// 保留回调调用面；系统选择器统一经 activity-result 路由，不再逐次覆盖。
+export async function pickFileForSave(filename, content, callback) {
+  let response;
+  try {
+    const Intent = plus.android.importClass('android.content.Intent');
+    const intent = buildIntent(Intent.ACTION_CREATE_DOCUMENT, filename);
+    const { resultCode, data } = await launchActivityForResult(intent, 2001);
+    if (resultCode !== RESULT_OK) response = { cancelled: true };
+    else {
+      if (!data) throw new Error('SAF_RESULT_EMPTY');
       plus.android.importClass(data);
       const uri = data.getData();
-      const resolver = Activity.getContentResolver();
+      if (!uri) throw new Error('SAF_URI_EMPTY');
+      const resolver = plus.android.runtimeMainActivity().getContentResolver();
       const result = writeSafJsonVerified(resolver, uri, content);
-      callback({
-        ok: true,
-        bytes: result.bytes,
-        verified: result.verified,
-        uri: uri.toString(),
-      });
-    } catch (e) {
-      callback({ error: (e && e.message) || String(e) });
+      response = { ok: true, bytes: result.bytes, verified: result.verified };
     }
-    endOperation();
-  };
-  try {
-    Activity.startActivityForResult(intent, 2001);
-  } catch (e) {
-    callback({ error: 'startActivityForResult 抛错：' + ((e && e.message) || String(e)) });
-    endOperation();
-  }
+  } catch (error) { response = { error: selectionError(error) }; }
+  callback(response);
 }
 
-export function pickFileForRead(callback) {
-  if (!beginOperation()) {
-    callback({ error: '操作进行中，请等待完成' });
-    return;
-  }
-  const Intent = plus.android.importClass('android.content.Intent');
-  const intent = buildIntent(Intent.ACTION_OPEN_DOCUMENT, null);
-  const Activity = plus.android.runtimeMainActivity();
-
-  console.log('[SAF-callback] pickFileForRead starting');
-  Activity.onActivityResult = function (requestCode, resultCode, data) {
-    console.log('[SAF-callback] read onActivityResult triggered', 'requestCode=', requestCode, 'resultCode=', resultCode);
-    if (requestCode !== 2002) return;
-    if (resultCode !== RESULT_OK || !data) {
-      callback({ cancelled: true });
-      endOperation();
-      return;
-    }
-    let input = null;
-    let finished = false;
-    try {
+export async function pickFileForRead(callback) {
+  let response;
+  let input = null;
+  try {
+    const Intent = plus.android.importClass('android.content.Intent');
+    const intent = buildIntent(Intent.ACTION_OPEN_DOCUMENT, null);
+    const { resultCode, data } = await launchActivityForResult(intent, 2002);
+    if (resultCode !== RESULT_OK) response = { cancelled: true };
+    else {
+      if (!data) throw new Error('SAF_RESULT_EMPTY');
       plus.android.importClass(data);
       const uri = data.getData();
-      const resolver = Activity.getContentResolver();
+      if (!uri) throw new Error('SAF_URI_EMPTY');
+      const resolver = plus.android.runtimeMainActivity().getContentResolver();
       input = plus.android.invoke(resolver, 'openInputStream', uri);
-      if (input == null) throw new Error('SAF_INPUT_NULL');
-
-      // 逐字节 read() 无参读取。
-      // 原因：plus.android.invoke(input, 'read', buf)（read(byte[]) 带数组参数）
-      // 在 Native.js 桥接会静默失败返回 undefined，导致循环不执行、total=0。
-      // 导出端 verify 用的 read() 无参已验证 work（667 字节逐字节比对一致）。
+      if (!input) throw new Error('SAF_INPUT_NULL');
       const bytesRead = [];
       for (;;) {
-        if (bytesRead.length >= MAX_IMPORT_BYTES) {
-          // 超过大小上限：立即关闭流报错，防止恶意大文件耗尽内存
-          try { plus.android.invoke(input, 'close'); } catch (_) {}
-          input = null;
-          callback({ error: '文件过大（超过 1MB），可能不是有效的备份文件' });
-          finished = true;
-          break;
-        }
-        const b = requireReadByte(plus.android.invoke(input, 'read'));
-        if (b === -1) break;
-        bytesRead.push(b);
+        // 仍保留本机已验证的无参 read()；在追加前检查上限，允许恰好 1MiB。
+        const byte = requireReadByte(plus.android.invoke(input, 'read'));
+        if (byte === -1) break;
+        if (bytesRead.length >= MAX_IMPORT_BYTES) throw new Error('文件过大（超过 1MB），可能不是有效的备份文件');
+        bytesRead.push(byte);
       }
-      if (!finished) {
-        console.log('[SAF-callback] read total=', bytesRead.length);
-        plus.android.invoke(input, 'close');
-        input = null;
-        const content = utf8Decode(bytesRead);
-        callback({ ok: true, content, uri: uri.toString(), bytes: bytesRead.length });
-        finished = true;
-      }
-    } catch (e) {
-      const msg = (e && e.message) || String(e);
-      console.error('[SAF-read-error]', msg);
-      try { if (input) plus.android.invoke(input, 'close'); } catch (cerr) {}
-      if (!finished) {
-        callback({ error: msg });
-        finished = true;
-      }
+      response = { ok: true, content: utf8Decode(bytesRead), bytes: bytesRead.length };
     }
-    endOperation();
-  };
-  try {
-    Activity.startActivityForResult(intent, 2002);
-  } catch (e) {
-    callback({ error: 'startActivityForResult 抛错：' + ((e && e.message) || String(e)) });
-    endOperation();
-  }
+  } catch (error) { response = { error: selectionError(error) }; }
+  finally { if (input) { try { plus.android.invoke(input, 'close'); } catch (_) {} } }
+  callback(response);
+}
+
+function selectionError(error) {
+  if (error && error.message === 'NATIVE_OPERATION_BUSY') return '操作进行中，请等待完成';
+  return error && error.message || '系统文件操作失败';
 }

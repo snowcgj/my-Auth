@@ -1,7 +1,8 @@
 import { decodeBase32, normalizeBase32Secret } from './totp-core.js';
 
 const SUPPORTED_TYPE = 'totp';
-const SUPPORTED_ALGORITHM = 'SHA1';
+const DEFAULT_ALGORITHM = 'SHA1';
+const SUPPORTED_ALGORITHMS = new Set(['SHA1', 'SHA256', 'SHA512']);
 const SUPPORTED_DIGITS = new Set([6, 8]);
 const SUPPORTED_PERIODS = new Set([30, 60]);
 
@@ -90,11 +91,11 @@ function parseOptionalInteger(parameters, name, supportedValues, defaultValue) {
 
 function parseAlgorithm(parameters) {
     if (!parameters.has('algorithm')) {
-        return SUPPORTED_ALGORITHM;
+        return DEFAULT_ALGORITHM;
     }
 
     const algorithm = parameters.get('algorithm').trim().toUpperCase();
-    if (algorithm !== SUPPORTED_ALGORITHM) {
+    if (!SUPPORTED_ALGORITHMS.has(algorithm)) {
         throw invalidUri('otpauth algorithm is not supported');
     }
     return algorithm;

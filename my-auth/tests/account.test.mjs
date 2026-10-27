@@ -87,10 +87,10 @@ test('unsupported algorithm is preserved, not silently downgraded', () => {
   const result = normalizeAccount({
     id: 1,
     secret: PUBLIC_TEST_SECRET,
-    algorithm: 'SHA256',
+    algorithm: 'SHA384',
   });
 
-  assert.equal(result.algorithm, 'SHA256');
+  assert.equal(result.algorithm, 'SHA384');
 });
 
 test('pinned is strict boolean', () => {

@@ -1,7 +1,7 @@
 <template>
   <view v-if="open" class="busy-layer" @touchmove.stop.prevent>
     <view class="busy-card" role="status" aria-live="polite" aria-busy="true">
-      <view class="busy-symbol"><view class="busy-ring" /><AppIcon name="lock" :size="22" /></view>
+      <view class="busy-symbol"><view class="busy-ring" /><AppIcon :name="icon" :size="22" /></view>
       <text class="busy-title">{{ title }}</text><text class="busy-description">{{ description }}</text>
       <view class="busy-footer"><view class="busy-dot" /><text>请稍候，完成后会自动继续</text></view>
     </view>
@@ -10,7 +10,7 @@
 
 <script setup>
 import AppIcon from './AppIcon.vue';
-defineProps({ open: { type: Boolean, default: false }, title: { type: String, default: '正在处理' }, description: { type: String, default: '' } });
+defineProps({ open: { type: Boolean, default: false }, title: { type: String, default: '正在处理' }, description: { type: String, default: '' }, icon: { type: String, default: 'lock' } });
 </script>
 
 <style scoped>

@@ -1,4 +1,7 @@
-const SUPPORTED_ALGORITHM = 'SHA1';
+import CryptoJS from 'crypto-js';
+
+const DEFAULT_ALGORITHM = 'SHA1';
+const SUPPORTED_ALGORITHMS = new Set(['SHA1', 'SHA256', 'SHA512']);
 const SUPPORTED_DIGITS = new Set([6, 8]);
 const SUPPORTED_PERIODS = new Set([30, 60]);
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -192,9 +195,9 @@ function normalizeOptions(options) {
         throw invalidInput('TOTP options must be an object');
     }
 
-    const algorithm = String(options.algorithm ?? SUPPORTED_ALGORITHM).trim().toUpperCase();
-    if (algorithm !== SUPPORTED_ALGORITHM) {
-        throw invalidInput('Only SHA1 TOTP is supported');
+    const algorithm = String(options.algorithm ?? DEFAULT_ALGORITHM).trim().toUpperCase();
+    if (!SUPPORTED_ALGORITHMS.has(algorithm)) {
+        throw invalidInput('TOTP algorithm must be SHA1, SHA256 or SHA512');
     }
 
     const digits = options.digits ?? 6;
@@ -238,10 +241,11 @@ function timeWindowToBytes(timeWindow) {
 }
 
 export function generateTOTP(options) {
-    const { digits, period, timestampSeconds } = normalizeOptions(options);
+    const { algorithm, digits, period, timestampSeconds } = normalizeOptions(options);
     const key = decodeBase32(options.secret);
     const timeWindow = getTimeWindow(timestampSeconds, period);
-    const hmac = hmacSha1(key, timeWindowToBytes(timeWindow));
+    const message = timeWindowToBytes(timeWindow);
+    const hmac = algorithm === 'SHA1' ? hmacSha1(key, message) : hmacSha2(algorithm, key, message);
     const offset = hmac[hmac.length - 1] & 0x0f;
     const binary =
         ((hmac[offset] & 0x7f) << 24) |
@@ -251,4 +255,20 @@ export function generateTOTP(options) {
     const code = binary % 10 ** digits;
 
     return code.toString().padStart(digits, '0');
+}
+
+// CryptoJS 的 HMAC 参数是 message/key；使用原始字节，不将 Base32 密钥当 UTF8 文本。
+function hmacSha2(algorithm, key, message) {
+    const toWordArray = bytes => {
+        const words = [];
+        for (let index = 0; index < bytes.length; index += 1) {
+            words[index >>> 2] |= bytes[index] << (24 - (index % 4) * 8);
+        }
+        return CryptoJS.lib.WordArray.create(words, bytes.length);
+    };
+    const calculate = algorithm === 'SHA256' ? CryptoJS.HmacSHA256 : CryptoJS.HmacSHA512;
+    const digest = calculate(toWordArray(message), toWordArray(key));
+    return Uint8Array.from({ length: digest.sigBytes }, (_, index) =>
+        (digest.words[index >>> 2] >>> (24 - (index % 4) * 8)) & 0xff
+    );
 }

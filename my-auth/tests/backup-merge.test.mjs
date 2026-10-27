@@ -112,7 +112,7 @@ test('mergeAccounts skips duplicates and keeps existing pinned/sortOrder', () =>
   assert.equal(result.merged.length, 1);
   assert.equal(result.added, 0);
   assert.equal(result.duplicates.length, 1);
-  assert.equal(result.duplicates[0].reason, 'duplicate-secret');
+  assert.equal(result.duplicates[0].reason, 'duplicate-totp');
   // 保留现有的自定义，不被 incoming 覆盖
   assert.equal(result.merged[0].pinned, true);
   assert.equal(result.merged[0].sortOrder, 99);
@@ -157,4 +157,37 @@ test('mergeAccounts tolerates non-array inputs', () => {
   assert.deepEqual(result.merged, []);
   assert.equal(result.added, 0);
   assert.equal(result.duplicates.length, 0);
+});
+
+test('same secret with different OTP configuration is not skipped', () => {
+  const existing = [sampleAccount()];
+  const incoming = [
+    sampleAccount({ id: 2, algorithm: 'SHA256' }),
+    sampleAccount({ id: 3, algorithm: 'SHA512' }),
+    sampleAccount({ id: 4, digits: 8 }),
+    sampleAccount({ id: 5, period: 60 }),
+    sampleAccount({ id: 6, algorithm: ' sha256 ' }),
+  ];
+  const result = mergeAccounts(existing, incoming);
+  assert.equal(result.added, 4);
+  assert.equal(result.duplicates.length, 1);
+  assert.equal(result.merged.length, 5);
+});
+
+test('legacy defaults still match explicit defaults without mutating accounts', () => {
+  const legacy = { id: 1, secret: PUBLIC_TEST_SECRET };
+  assert.equal(buildDuplicateKey(legacy), buildDuplicateKey(sampleAccount()));
+  assert.equal(mergeAccounts([legacy], [sampleAccount()]).added, 0);
+  assert.equal('algorithm' in legacy, false);
+  for (const algorithm of ['SHA256', 'SHA512']) {
+    assert.equal(mergeAccounts([sampleAccount({ algorithm })], [sampleAccount({ algorithm })]).added, 0);
+  }
+});
+
+test('fingerprint keeps default legacy keys and detects OTP configuration changes', () => {
+  const base = [sampleAccount()];
+  assert.equal(buildAccountFingerprint(base), buildAccountFingerprint([{ secret: PUBLIC_TEST_SECRET }]));
+  for (const overrides of [{ algorithm: 'SHA256' }, { algorithm: 'SHA512' }, { digits: 8 }, { period: 60 }]) {
+    assert.notEqual(buildAccountFingerprint(base), buildAccountFingerprint([sampleAccount(overrides)]));
+  }
 });

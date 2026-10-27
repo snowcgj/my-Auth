@@ -15,10 +15,14 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 
 ## 3. 当前状态
 
+**最新验收与提交授权**：用户已分别确认新增算法功能及相册识别功能测试可用，现授权将两批改动、测试与文档保存为一次本地提交，不推送。112 项测试已通过，提交收尾源码未变化；完整异常/机型/格式/性能及备份交叉回归不超出用户明确反馈范围认定。下述早期“未提交/待验”条目为实施时点记录，最新范围见 `.ai/plans/2026-10-27-system-image-scan.md` 末尾；提交号以 `git log -1` 为准。
+
+**最新批次（本地未提交）**：用户已反馈 SHA256/SHA512 新功能真机测试无问题；系统选图代码已接入，新增 platform-image/activity-result，备份结果回调也已迁入统一入口，因此相册和本轮备份回归仍待真机。112 项测试通过（27+11+8+19+31+16，约 91 秒），12 个 SFC 与 36 项 DOM 检查通过；平台部分为模拟桥接，不能当作原生验收。入口为添加账户→从相册识别，空列表也有入口。完整停止并重新运行 App 后，验证 PNG/JPEG、取消、无二维码、选图后备份及相机；ByteBuffer/缓存路径/HEIF/大图性能均待验。见 `.ai/plans/2026-10-27-system-image-scan.md`。算法公开二维码/实时对照页在仓库外 `sha2-validation.html`。
+
 **本次阶段存档补充**：用户已确认 Android 新界面效果满意，并确认统一弹窗、删除取消/遮罩/返回、备份等待提示及文件选择取消后可重试等指定检查全部通过。用户已授权合成一次本地提交，不推送。下列早期“真机待验”条目为实施阶段记录，当前准确验收范围见 `.ai/plans/2026-10-27-feedback-ui.md` 末尾。73 项测试已通过，提交收尾仅改文档，未重复跑全量测试。后续先做相册识别，再独立扩展 SHA256/SHA512；两项当前均未实现。
 
 - **最新提交**：见 `git log --oneline -3`（本次阶段存档含代码与文档两次提交）
-- **测试**：`cd my-auth/my-auth && npm test` → **73 项通过**（totp-core 9 + otpauth 10 + account 8 + backup-merge 16 + backup-crypto 30，含 Node crypto 独立对照 + 参数校验防御 + spy 验证不执行派生），耗时约 81s（PBKDF2 十万次迭代）
+- **测试**：在内层应用目录运行 `npm test` → **112 项通过**（totp-core 27 + otpauth 11 + account 8 + backup-merge 19 + backup-crypto 31 + platform-io 16），约 91 秒。新增平台测试模拟 Java/Activity，不替代真机。
 - **已完成**：
   - **统一弹窗与等待反馈（2026-10-27，本地验证完成、真机待验）**：AppDialog/AppToast/BusyOverlay，删除确认与设置说明/隐私不再用系统弹窗，复制提示统一；备份先提交反馈并让出短任务再同步计算，finally 释放 busy、卸载后令牌失效。73 项测试、12 个 SFC 检查、27 项 DOM 检查、8 组模拟备份场景通过。实际加载动画/SAF 返回需真机复验，未迁移线程；见 `.ai/plans/2026-10-27-feedback-ui.md`。
   - **视觉与导航改版（2026-10-27，代码完成、真机待验）**：用户确认原型后接入暖白/淡紫首页、服务图标、底部操作面板、设置与备份分步界面；移除 Tab，保留三页注册，使用 navigateTo/navigateBack。首页 onShow 启动时钟并重载，onHide/onUnload 停止。核心算法、备份协议、SAF 不变。73 项测试与 Vue SFC 检查通过；浏览器交互检查为模拟 uni API，不能替代 Android。下一步先按 `.ai/plans/2026-10-27-ui-refresh.md` 真机验收。
@@ -26,12 +30,14 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
   - **加密备份最小验证链路（2026-10-26 ~ 10-27）**：加密核心 + 合并逻辑 + 平台适配（SecureRandom + SAF）+ 真机验证页跑通。详见 `.ai/plans/2026-10-26-encrypted-backup.md` 与 `.ai/decisions/2026-10-26-encrypted-backup.md`
   - **批次 C 正式 UI（2026-10-27，真机验收通过）**：`backup.vue` 重写为正式备份与恢复流程（密码二次确认、恢复预览、确认合并、读取失败防御、防重复操作、1MB 文件上限、备份状态展示）；`backup-crypto.js` 加参数校验（password 类型、iterations 精确接受 100000、salt/iv 字节数）；`platform-file.js` 加防重复操作 + 大小上限统一命名。8 项 Android 真机测试全部通过。
 - **逻辑模块**（纯逻辑，运行时不依赖 `uni.*`/Node `Buffer`/`crypto`）：
-  - `utils/totp-core.js`：RFC 6238 TOTP，`generateTOTP({secret, timestampSeconds, digits, period, algorithm})`，仅 SHA1、digits 6/8、period 30/60
-  - `utils/otpauth.js`：`parseOtpAuthUri(uri)`，参数按名读取+URL 解码，拒绝 HOTP/SHA256/SHA512
+  - `utils/totp-core.js`：RFC 6238 TOTP，`generateTOTP({secret, timestampSeconds, digits, period, algorithm})`，SHA1/SHA256/SHA512、digits 6/8、period 30/60；默认 SHA1
+  - `utils/otpauth.js`：`parseOtpAuthUri(uri)`，参数按名读取+URL 解码，接受三种算法，拒绝 HOTP 和未知算法
   - `utils/account.js`：`normalizeAccount(account)`，保留未知字段、仅缺失补默认
   - `utils/backup-merge.js`：`serializeForBackup`/`buildDuplicateKey`/`buildAccountFingerprint`/`mergeAccounts`（skip 策略）
   - `utils/backup-crypto.js`：`createBackup`/`openBackup`，依赖注入 `options.randomBytes`；核心不碰平台 API
 - **平台适配模块**（App 原生 runtime 专用，通过 Native.js 桥接 Java）：
+  - `utils/activity-result.js`：原生选择器共享结果入口、单一 pending 互斥，未知结果转交已有可调用处理器；只有这里赋值 onActivityResult。
+  - `utils/platform-image.js`：系统选图 → Java Channels/ByteBuffer 复制到本次缓存 → plus.barcode.scan → 清理；20MiB 上限，原生待验；manifest 已显式声明 Barcode。
   - `utils/platform-random.js`：`getRandomBytes(n)`，Android 走 `java.security.SecureRandom`，其他走 Web Crypto，不可用抛 `NO_SECURE_RANDOM`
   - `utils/platform-file.js`：`pickFileForSave`/`pickFileForRead`/`writeSafJsonVerified`，Android 走 SAF（`ACTION_CREATE/OPEN_DOCUMENT` + `ContentResolver`），逐字节 `write(int)`/`read()` 绕开数组参数桥接问题
 - **页面/组件**：
@@ -68,10 +74,10 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 - 删除旧 `utils/finial.js`（确认无引用后）；清理实验性/未用文件。home.vue 的旧 FileSystemManager 死代码已随本轮页面改版移除；旧资源与实验文件未删除。
 
 **真机用例补测**
-- 参数乱序、URL 编码账户名、digits=8/period=60、应被拒绝（HOTP/SHA256）的二维码。
+- 参数乱序、URL 编码账户名、digits=8/period=60、SHA256/SHA512、应被拒绝（HOTP/SHA384）的二维码；以及新算法备份恢复/重启保留。
 
 **后续功能路线**
-用户已确认上一轮视觉满意并提供 Android 截图；这不等于全部功能复验通过。本轮优先真机验收新弹窗与等待反馈，随后实现相册识别，再独立扩展 SHA256/SHA512（现仍拒绝，不要改文档说已支持）。
+用户已确认视觉、弹窗/等待反馈与 SHA256/SHA512 测试无问题。现在验收已接入的系统相册选图及共享回调之后的备份、相机；平台模拟验证不等于真机通过。
 
 1. 本轮视觉与导航改版 Android 验收（含原备份流程回归）；此前 receiveTasks 每秒报错需观察，尚未确认修复
 2. 手动添加与编辑账户
@@ -85,7 +91,7 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 
 1. 读：`AGENTS.md` → `.ai/project.md` → `.ai/architecture.md` → `.ai/conventions.md` → `.ai/security.md`。
 2. 读加密备份相关：`.ai/plans/2026-10-26-encrypted-backup.md`（设计+进度）→ `.ai/decisions/2026-10-26-encrypted-backup.md`（技术取舍）→ `.ai/plans/2026-10-26-saf-write-0kb-issue.md`（SAF 故障过程与结论）。
-3. 在内层应用目录运行 `npm test` 确认 73 项基线通过（约 76~81 秒）。
+3. 在内层应用目录运行 `npm test` 确认当前 112 项基线通过（约 91 秒）。
 4. 用 HBuilderX 打开 `my-auth/`，USB 真机运行确认基线可用。
 5. 与用户对齐本次要做什么，再动代码。
 

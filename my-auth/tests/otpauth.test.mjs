@@ -127,17 +127,27 @@ test('unsupported types and algorithms are rejected', () => {
         /type/
     );
     assert.throws(
-        () => parseOtpAuthUri(`otpauth://totp/Test:alice?secret=${PUBLIC_TEST_SECRET}&algorithm=SHA256`),
+        () => parseOtpAuthUri(`otpauth://totp/Test:alice?secret=${PUBLIC_TEST_SECRET}&algorithm=SHA384`),
         /algorithm/
     );
     assert.throws(
-        () => parseOtpAuthUri(`otpauth://totp/Test:alice?secret=${PUBLIC_TEST_SECRET}&algorithm=SHA512`),
+        () => parseOtpAuthUri(`otpauth://totp/Test:alice?secret=${PUBLIC_TEST_SECRET}&algorithm=MD5`),
         /algorithm/
     );
     assert.throws(
         () => parseOtpAuthUri(`otpauth://totp/Test:alice?secret=${PUBLIC_TEST_SECRET}&algorithm=`),
         /algorithm/
     );
+});
+
+test('SHA2 URIs accept named parameters, encoding, case and periods', () => {
+    for (const algorithm of ['SHA256', 'SHA512']) {
+        const parsed = parseOtpAuthUri(`otpauth://totp/Acme%3Aalice%40example.com?period=60&algorithm=%20${algorithm.toLowerCase()}%20&digits=8&issuer=Acme&secret=${PUBLIC_TEST_SECRET}`);
+        assert.equal(parsed.algorithm, algorithm);
+        assert.equal(parsed.accountName, 'alice@example.com');
+        assert.equal(parsed.period, 60);
+        assert.equal(parsed.digits, 8);
+    }
 });
 
 test('unsupported digits and periods are rejected', () => {

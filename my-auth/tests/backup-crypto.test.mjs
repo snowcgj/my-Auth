@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import CryptoJS from 'crypto-js';
 import { createBackup, openBackup, BackupError } from '../utils/backup-crypto.js';
+import { generateTOTP } from '../utils/totp-core.js';
+import { parseOtpAuthUri } from '../utils/otpauth.js';
+import { normalizeAccount } from '../utils/account.js';
+import { mergeAccounts } from '../utils/backup-merge.js';
 
 const PUBLIC_TEST_SECRET = 'JBSWY3DPEHPK3PXP';
 const PASSWORD = 'correct-horse-battery-staple';
@@ -52,6 +56,25 @@ test('round-trip strips runtime fields code and countdown', () => {
   const result = openBackup(PASSWORD, backup);
   assert.equal('code' in result.accounts[0], false);
   assert.equal('countdown' in result.accounts[0], false);
+});
+
+test('SHA2 URI accounts keep configuration and codes through storage and encrypted restore', () => {
+  const timestampSeconds = 1111111109;
+  const accounts = ['SHA256', 'SHA512'].map((algorithm, index) => {
+    const parsed = parseOtpAuthUri(`otpauth://totp/Demo:alice?secret=${PUBLIC_TEST_SECRET}&algorithm=${algorithm}&digits=8&period=60`);
+    return normalizeAccount(sampleAccount({ ...parsed, id: index + 1 }));
+  });
+  // 模拟持久化后重读；时间固定，不读取设备时间。
+  const stored = JSON.parse(JSON.stringify(accounts)).map(normalizeAccount);
+  const expectedCodes = accounts.map(account => generateTOTP({ ...account, timestampSeconds }));
+  const backup = createBackup(PASSWORD, stored);
+  const restored = openBackup(PASSWORD, JSON.stringify(backup)).accounts.map(normalizeAccount);
+  assert.deepEqual(restored.map(account => account.algorithm), ['SHA256', 'SHA512']);
+  assert.deepEqual(restored.map(account => [account.digits, account.period]), [[8, 60], [8, 60]]);
+  assert.deepEqual(restored.map(account => generateTOTP({ ...account, timestampSeconds })), expectedCodes);
+  const result = mergeAccounts([sampleAccount()], restored);
+  assert.equal(result.added, 2, 'same secret with distinct algorithms must survive restore');
+  assert.equal(mergeAccounts(result.merged, restored).added, 0, 'restoring identical configurations again skips them');
 });
 
 test('wrong password is rejected with PASSWORD_OR_CORRUPT and no partial data', () => {
