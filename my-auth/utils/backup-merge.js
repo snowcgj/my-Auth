@@ -7,6 +7,8 @@
 // 第一版合并策略只做 skip（重复项保留现有，incoming 重复项进清单），
 // 不实现 overwrite 以避免在策略语义未与用户对齐时引入半成品行为。
 
+import { getAccountDisplayNames } from './account.js';
+
 // 运行时字段：每次重算，不属于账户数据，备份与指纹都剔除
 const RUNTIME_FIELDS = ['code', 'countdown'];
 
@@ -36,13 +38,15 @@ export function buildDuplicateKey(account) {
   return JSON.stringify([secret.toLowerCase(), algorithm, digits, period]);
 }
 
-// 账户集合稳定指纹：按密钥及验证码配置排序后确定性哈希。
+// v2 指纹同时包含展示名称；仍与顺序、运行时字段、置顶排序无关。
 // 仅用于"导出后是否变更"检测，不要求密码学强度；顺序无关、对运行时字段不敏感。
 export function buildAccountFingerprint(accounts) {
   const clean = serializeForBackup(accounts);
   const keys = clean
-    .map(buildDuplicateKey)
-    .filter(Boolean)
+    .map(account => {
+      const names = getAccountDisplayNames(account);
+      return JSON.stringify([buildDuplicateKey(account), names.app, names.name]);
+    })
     .sort((x, y) => (x < y ? -1 : x > y ? 1 : 0));
   if (keys.length === 0) return 'empty';
   // djb2 变体：碰撞概率对几百量级账户足够低，且实现简单、无依赖
@@ -51,7 +55,15 @@ export function buildAccountFingerprint(accounts) {
   for (let i = 0; i < text.length; i++) {
     hash = ((hash << 5) + hash + text.charCodeAt(i)) >>> 0;
   }
-  return `n${keys.length}:${hash.toString(36)}`;
+  return `v2:n${keys.length}:${hash.toString(36)}`;
+}
+
+// 旧记录没有导出时的名称，无法可靠断言是否改过名；只提示重建备份状态。
+export function getBackupChangeState(accounts, fingerprint) {
+  if (typeof fingerprint !== 'string') return 'unavailable';
+  if (/^n\d+:[a-z0-9]+$/.test(fingerprint)) return 'legacy';
+  if (fingerprint !== 'empty' && !/^v2:n\d+:[a-z0-9]+$/.test(fingerprint)) return 'unavailable';
+  return buildAccountFingerprint(accounts) === fingerprint ? 'current' : 'changed';
 }
 
 // 合并：existing + incoming → { merged, duplicates, added }。

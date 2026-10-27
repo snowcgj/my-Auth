@@ -42,6 +42,7 @@
     <button v-if="accounts.length && !loadError" class="add-account" hover-class="ui-tap" @click="onAddAccount"><AppIcon name="plus" :size="20" light /><text>添加账户</text></button>
     <ActionSheet :open="addSheetOpen" title="添加账户" subtitle="扫描验证二维码，或从图片中识别。" :actions="addActions" @close="addSheetOpen = false" @select="onAddAction" />
     <ActionSheet :open="!!menuAccount" :title="menuAccount ? menuAccount.app : '账户'" :subtitle="menuAccount ? menuAccount.name : ''" :actions="accountActions" @close="menuAccountId = null" @select="onAccountAction" />
+    <AccountNameEditor :open="!!editDraft" :service="editDraft ? editDraft.app : ''" :account="editDraft ? editDraft.name : ''" :original-service="editDraft ? editDraft.originalApp : ''" :original-account="editDraft ? editDraft.originalName : ''" :error="editError" @update-service="updateEditName('app', $event)" @update-account="updateEditName('name', $event)" @cancel="closeNameEditor" @save="saveAccountNames" />
     <AppDialog :open="!!dialog" :title="dialog ? dialog.title : ''" :description="dialog ? dialog.description : ''" :icon="dialog && dialog.type === 'delete' ? 'trash' : 'info'" :danger="!!dialog && dialog.type === 'delete'" :show-cancel="!!dialog && dialog.type === 'delete'" :confirm-text="dialog && dialog.type === 'delete' ? '删除账户' : '知道了'" @cancel="dialog = null" @confirm="onDialogConfirm">
       <template v-if="dialog && dialog.type === 'delete'">
         <view class="delete-identity"><text class="delete-service">{{ dialog.service }}</text><text class="delete-name">{{ dialog.name }}</text></view>
@@ -62,19 +63,21 @@ import ActionSheet from '@/components/ActionSheet.vue';
 import AppDialog from '@/components/AppDialog.vue';
 import AppToast from '@/components/AppToast.vue';
 import BusyOverlay from '@/components/BusyOverlay.vue';
+import AccountNameEditor from '@/components/AccountNameEditor.vue';
 import { scanSystemImage, supportsSystemImageScan } from '@/utils/platform-image.js';
 import { waitForFeedback } from '@/utils/feedback-render.js';
 import { parseOtpAuthUri } from '@/utils/otpauth.js';
-import { normalizeAccount } from '@/utils/account.js';
+import { normalizeAccount, renameAccount, validateAccountNames } from '@/utils/account.js';
 import { readBackupSummary } from '@/utils/backup-summary.js';
 
 export default {
-  components: { AccountItem, AppHeader, AppIcon, ActionSheet, AppDialog, AppToast, BusyOverlay },
+  components: { AccountItem, AppHeader, AppIcon, ActionSheet, AppDialog, AppToast, BusyOverlay, AccountNameEditor },
   data() {
     return {
       now: Math.floor(Date.now() / 1000), timer: null, keyword: '', accounts: [],
       loading: true, loadError: '', pageVisible: false, addSheetOpen: false, menuAccountId: null,
       dialog: null,
+      editDraft: null, editError: '',
       imageImportAvailable: false, imageBusy: false, imageStage: 'pick', imageOperation: 0, homeDisposed: false,
       backupSummary: { state: 'unavailable', title: '备份状态暂不可用' },
     };
@@ -86,11 +89,12 @@ export default {
     this.loadAccounts();
     this.startClock();
   },
-  onHide() { this.pageVisible = false; this.stopClock(); this.addSheetOpen = false; this.menuAccountId = null; this.dialog = null; this.$refs.notice?.clear(); },
+  onHide() { this.pageVisible = false; this.stopClock(); this.addSheetOpen = false; this.menuAccountId = null; this.dialog = null; this.closeNameEditor(); this.$refs.notice?.clear(); },
   onUnload() { this.pageVisible = false; this.stopClock(); this.invalidateImageImport(); },
   beforeUnmount() { this.pageVisible = false; this.stopClock(); this.invalidateImageImport(); },
   onBackPress() {
     if (this.imageBusy) return true;
+    if (this.editDraft) { this.closeNameEditor(); return true; }
     if (this.dialog) { this.dialog = null; return true; }
     if (this.menuAccountId !== null) { this.menuAccountId = null; return true; }
     if (this.addSheetOpen) { this.addSheetOpen = false; return true; }
@@ -111,6 +115,7 @@ export default {
     menuAccount() { return this.accounts.find(account => account.id === this.menuAccountId) || null; },
     accountActions() {
       return [
+        { value: 'edit', label: '编辑名称', icon: 'edit' },
         { value: 'pin', label: this.menuAccount && this.menuAccount.pinned ? '取消置顶' : '置顶账户', icon: 'pin' },
         { value: 'delete', label: '删除账户', icon: 'trash', danger: true },
       ];
@@ -132,6 +137,46 @@ export default {
     },
   },
   methods: {
+    openNameEditor(accountId) {
+      if (this.loadError || this.imageBusy) return;
+      const account = this.accounts.find(item => item.id === accountId);
+      if (!account) return;
+      this.$refs.notice?.clear();
+      this.editDraft = {
+        id: accountId,
+        app: String(account.app ?? ''), name: String(account.name ?? ''),
+        originalApp: String(account.app ?? ''), originalName: String(account.name ?? ''),
+      };
+      this.editError = '';
+    },
+    updateEditName(field, value) {
+      if (!this.editDraft || (field !== 'app' && field !== 'name')) return;
+      this.editDraft[field] = value;
+      this.editError = '';
+    },
+    closeNameEditor() {
+      if (!this.editDraft) return;
+      this.editDraft = null;
+      this.editError = '';
+      try { if (typeof uni.hideKeyboard === 'function') uni.hideKeyboard(); } catch (_) {}
+    },
+    saveAccountNames() {
+      if (!this.editDraft || this.loadError) return;
+      const checked = validateAccountNames(this.editDraft.app, this.editDraft.name);
+      if (!checked.valid) return;
+      const current = this.accounts.find(account => account.id === this.editDraft.id);
+      if (!current) { this.closeNameEditor(); this.showNotice('账户已不存在', 'error'); return; }
+      if (checked.app === current.app && checked.name === current.name) return;
+      const updated = renameAccount(current, checked.app, checked.name);
+      const next = this.accounts.map(account => account.id === current.id ? updated : account);
+      if (!this.persistAccounts(next)) {
+        this.editError = '保存失败，输入已保留，请重试。';
+        return;
+      }
+      this.accounts = next;
+      this.closeNameEditor();
+      this.showNotice('名称已更新');
+    },
     invalidateImageImport() { this.homeDisposed = true; this.imageOperation += 1; this.imageBusy = false; },
     async onImportImage() {
       if (this.imageBusy || this.loadError || this.homeDisposed) return;
@@ -205,6 +250,7 @@ export default {
       const account = this.menuAccount;
       this.menuAccountId = null;
       if (!account) return;
+      if (action === 'edit') this.openNameEditor(account.id);
       if (action === 'pin') this.onTogglePin(account.id);
       if (action === 'delete') this.onDeleteAccount(account.id);
     },

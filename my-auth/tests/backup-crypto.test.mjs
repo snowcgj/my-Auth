@@ -37,7 +37,7 @@ function clone(obj) {
 
 test('round-trip returns the original accounts', () => {
   const accounts = [
-    sampleAccount({ id: 1, secret: 'AAAA', issuer: 'Acme' }),
+    sampleAccount({ id: 1, secret: 'AAAA', issuer: 'Acme', app: '工作邮箱', name: '自定义账号' }),
     sampleAccount({ id: 2, secret: 'BBBB', issuer: 'Beta', digits: 8, period: 60 }),
   ];
   const backup = createBackup(PASSWORD, accounts);
@@ -45,6 +45,9 @@ test('round-trip returns the original accounts', () => {
   assert.equal(result.accounts.length, 2);
   assert.equal(result.accounts[0].secret, 'AAAA');
   assert.equal(result.accounts[0].issuer, 'Acme');
+  assert.equal(result.accounts[0].app, '工作邮箱');
+  assert.equal(result.accounts[0].name, '自定义账号');
+  assert.equal(result.accounts[0].accountName, 'alice@example.com');
   assert.equal(result.accounts[1].secret, 'BBBB');
   assert.equal(result.accounts[1].digits, 8);
   assert.equal(result.accounts[1].period, 60);

@@ -1,5 +1,5 @@
 // 展示层摘要：只读取既有存储，不迁移数据、不生成验证码、不保存密钥副本。
-import { buildAccountFingerprint } from './backup-merge.js';
+import { getBackupChangeState } from './backup-merge.js';
 
 const unavailable = () => ({ state: 'unavailable', title: '备份状态暂不可用', detail: '进入备份与恢复查看', count: 0, exportedAt: '' });
 
@@ -18,13 +18,14 @@ export function readBackupSummary(accounts) {
       ? (keys.includes('accounts') ? uni.getStorageSync('accounts') : [])
       : accounts;
     if (!Array.isArray(current) || current.some(account => !account || typeof account !== 'object')) return unavailable();
-    const changed = buildAccountFingerprint(current) !== meta.fingerprint;
+    const state = getBackupChangeState(current, meta.fingerprint);
+    if (state === 'unavailable') return unavailable();
     const pad = value => String(value).padStart(2, '0');
     const exportedAt = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
     return {
-      state: changed ? 'changed' : 'current',
-      title: changed ? '账户有更新，记得备份' : '账户与上次导出一致',
-      detail: `上次导出 ${exportedAt} · ${meta.exportedCount} 个账户`,
+      state,
+      title: state === 'legacy' ? '建议重新备份一次' : state === 'changed' ? '账户有更新，记得备份' : '账户与上次导出一致',
+      detail: state === 'legacy' ? '旧记录未检测名称变更，重新导出后可更新状态' : `上次导出 ${exportedAt} · ${meta.exportedCount} 个账户`,
       count: meta.exportedCount,
       exportedAt,
     };

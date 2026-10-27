@@ -4,14 +4,39 @@
 
 const DEFAULT_ICON = '/static/logo.png';
 
+export function getAccountDisplayNames(account) {
+  return {
+    app: account.app || account.issuer || account.accountName || 'Unknown App',
+    name: account.name || account.accountName || 'Unknown Account',
+  };
+}
+
+export function validateAccountNames(app, name) {
+  const serviceName = typeof app === 'string' ? app.trim() : '';
+  const accountName = typeof name === 'string' ? name.trim() : '';
+  return {
+    app: serviceName,
+    name: accountName,
+    appError: serviceName ? '' : '请输入服务名称',
+    nameError: accountName ? '' : '请输入账户名称',
+    valid: !!serviceName && !!accountName,
+  };
+}
+
+// 编辑只覆盖展示字段；保留原始发行方、账户标识与所有验证码参数。
+export function renameAccount(account, app, name) {
+  const checked = validateAccountNames(app, name);
+  if (!checked.valid) throw new Error('ACCOUNT_NAMES_REQUIRED');
+  return { ...account, app: checked.app, name: checked.name };
+}
+
 export function normalizeAccount(account) {
   const fallbackId = Date.now();
   return {
     ...account,
     id: account.id ?? fallbackId,
     icon: account.icon ?? DEFAULT_ICON,
-    app: account.app || account.issuer || account.accountName || 'Unknown App',
-    name: account.name || account.accountName || 'Unknown Account',
+    ...getAccountDisplayNames(account),
     issuer: account.issuer ?? '',
     accountName: account.accountName || account.name || '',
     secret: account.secret ?? '',

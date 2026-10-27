@@ -6,20 +6,21 @@
 
 主要运行链路：
 
-- `my-auth/pages/home/home.vue`：账户列表、扫码、二维码解析、增删、本地存储，并维护单一秒级时钟 `now`，通过 `timestampSeconds` 下发给卡片。
+- `my-auth/pages/home/home.vue`：账户列表、扫码、二维码解析、增删与展示名称编辑、本地存储，并维护单一秒级时钟 `now`，通过 `timestampSeconds` 下发给卡片。
 - `my-auth/components/AccountItem.vue`：单账户展示与验证码计算，接收父级 `timestampSeconds` 按时间窗口刷新，不持有自身定时器。
 - `my-auth/components/AppHeader.vue`、`AppIcon.vue`、`ServiceIcon.vue`、`ActionSheet.vue`：共用导航头、本地图标、服务图标与操作面板；`styles/theme.css` 定义视觉变量和共用样式。
 - `my-auth/components/AppDialog.vue`、`AppToast.vue`、`BusyOverlay.vue`：统一确认/说明、轻提示、备份等待反馈；卡片通过 notify 事件交由首页展示提示。`utils/feedback-render.js` 为同步计算前的绘制让渡，不是后台计算。
+- `my-auth/components/AccountNameEditor.vue`：Composition API 名称表单，仅接收名称和校验错误，不接触密钥；草稿由首页持有，保存仅覆盖 app/name，先持久化成功再更新内存。
 - `my-auth/utils/backup-summary.js`：仅用于首页/设置的只读备份摘要，复用既有指纹函数；不更改账户或备份元信息。
 - `my-auth/pages.json`：三个页面均保留注册，移除 Tab；首页通过 `navigateTo` 进入设置或备份，再用 `navigateBack` 返回。首页 onShow 重读账户并启动单一时钟，onHide/onUnload/beforeUnmount 清理时钟。改版的 Android 验收待执行，取舍见 `.ai/decisions/2026-10-27-ui-navigation.md`。
 - `my-auth/utils/totp-core.js`：当前运行时使用的 TOTP 计算；保留手写 Base32/SHA1/HMAC-SHA1，SHA256/SHA512 HMAC 复用已有 CryptoJS。密钥和计数器通过二进制 WordArray 转换，时间和配置通过参数传入；默认 SHA1，运行时不使用 Node API 或随机数。
 - `my-auth/utils/otpauth.js`：当前运行时使用的 `otpauth://` 解析与校验。
-- `my-auth/utils/account.js`：账户规范化，补齐缺失字段、保留未知字段、不静默修正非法值；纯逻辑，被 `home.vue` 加载存储时调用。
+- `my-auth/utils/account.js`：账户规范化、共享展示名回退规则、名称校验与 renameAccount；只覆盖展示字段，保留未知字段、不静默修正非法配置；纯逻辑。
 - `my-auth/utils/finial.js`：旧实现，已被上述模块取代，暂未删除，待清理引用后移除。
 
 **加密备份相关模块**（2026-10-26 ~ 10-27 新增，最小验证链路已跑通）：
 
-- `my-auth/utils/backup-merge.js`：纯逻辑，`serializeForBackup`（剔除 code/countdown）、`buildDuplicateKey`（secret 小写 + algorithm/digits/period，缺省 SHA1/6/30）、`buildAccountFingerprint`（djb2 变体指纹）、`mergeAccounts`（skip 策略，保留现有 pinned/sortOrder）。默认配置保留历史去重键/指纹；非默认配置旧指纹可能显示有更新，账户不变。不依赖 `uni.*`/Node `Buffer`/`crypto`。
+- `my-auth/utils/backup-merge.js`：纯逻辑，`serializeForBackup`（剔除 code/countdown）、`buildDuplicateKey`（secret 小写 + algorithm/digits/period，缺省 SHA1/6/30）、`buildAccountFingerprint`（含展示名称的 v2 djb2 变体指纹）、`getBackupChangeState`（current/changed/legacy/unavailable）、`mergeAccounts`（skip 策略，保留现有 pinned/sortOrder）。默认配置保留历史去重键；旧非空指纹没有名称快照，统一建议重新备份，不修改 meta。名称不参与恢复去重，重复账户保留当前名称。不依赖 `uni.*`/Node `Buffer`/`crypto`。
 - `my-auth/utils/backup-crypto.js`：纯逻辑加密核心，`createBackup`/`openBackup` + `BackupError`。AES-256-CBC + PBKDF2-HMAC-SHA256(100000) + HMAC-SHA256(EtM)。**依赖注入** `options.randomBytes`，核心不碰平台 API。参数校验：password 非空字符串、iterations 精确接受 V1 唯一值 100000（异常参数在 PBKDF2 前拒绝）、salt/iv 字节数校验。
 - `my-auth/utils/platform-random.js`：平台适配层，`getRandomBytes(n)`。Android 走 `java.security.SecureRandom` via Native.js，其他走 Web Crypto，不可用返回 null。
 - `my-auth/utils/platform-file.js`：平台适配层，`pickFileForSave`/`pickFileForRead`/`writeSafJsonVerified`。Android 走 SAF。逐字节 `write(int)`/`read()` 保留本机已验证算法；系统结果交由 activity-result 统一监听和互斥，不再自行覆盖回调。导出 64KiB / 导入 1MiB 上限，页面调用面仍为 callback；回调重构后真机待回归。
@@ -31,7 +32,7 @@
 
 备份页面为等待反馈将调用编排改成 async/await，原生回调以 Promise 包装，密码学与文件 IO 内部未改。busy 在开始让渡前设定、finally 清理；页面卸载使令牌失效，尚未开始的计算/页面写入不再继续；已发起的原生操作不声称被撤销。详情及未验边界见 `.ai/plans/2026-10-27-feedback-ui.md`。
 
-- `my-auth/tests/`：基于 Node `node:test` 的自动测试，`npm test` 运行（**112 项**：totp-core 27 + otpauth 11 + account 8 + backup-merge 19 + backup-crypto 31 + platform-io 16）。含 18 条 RFC 向量、Node crypto 对照、加密往返、模拟 Java 通道与结果路由，不进入运行时。SHA2 用户真机反馈通过；选图和共享回调重构仍待真机。
+- `my-auth/tests/`：基于 Node `node:test` 的自动测试，`npm test` 运行（**122 项**：totp-core 27 + otpauth 11 + account 11 + backup-merge 23 + backup-crypto 31 + platform-io 16 + backup-summary 3）。含 18 条 RFC 向量、Node crypto 对照、加密往返、模拟 Java 通道与结果路由，不进入运行时。SHA2 与系统选图用户已反馈测试可用；展示名称编辑的 Android 测试待执行。
 
 当前还保留多套实验算法、页面副本和调试代码。引用前必须确认是否属于主运行链路，不能仅凭文件名判断。
 

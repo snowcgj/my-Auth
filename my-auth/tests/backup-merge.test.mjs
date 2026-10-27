@@ -5,7 +5,9 @@ import {
   buildDuplicateKey,
   buildAccountFingerprint,
   mergeAccounts,
+  getBackupChangeState,
 } from '../utils/backup-merge.js';
+import { normalizeAccount, renameAccount } from '../utils/account.js';
 
 const PUBLIC_TEST_SECRET = 'JBSWY3DPEHPK3PXP';
 
@@ -184,10 +186,48 @@ test('legacy defaults still match explicit defaults without mutating accounts', 
   }
 });
 
-test('fingerprint keeps default legacy keys and detects OTP configuration changes', () => {
+test('fingerprint uses effective display names and detects OTP configuration changes', () => {
   const base = [sampleAccount()];
-  assert.equal(buildAccountFingerprint(base), buildAccountFingerprint([{ secret: PUBLIC_TEST_SECRET }]));
+  assert.equal(buildAccountFingerprint(base), buildAccountFingerprint([{ secret: PUBLIC_TEST_SECRET, issuer: 'Acme', accountName: 'alice@example.com' }]));
   for (const overrides of [{ algorithm: 'SHA256' }, { algorithm: 'SHA512' }, { digits: 8 }, { period: 60 }]) {
     assert.notEqual(buildAccountFingerprint(base), buildAccountFingerprint([sampleAccount(overrides)]));
   }
+});
+
+test('v2 fingerprint detects either display name while duplicate identity stays unchanged', () => {
+  const original = sampleAccount();
+  const fingerprint = buildAccountFingerprint([original]);
+  assert.match(fingerprint, /^v2:/);
+  for (const renamed of [renameAccount(original, '工作邮箱', original.name), renameAccount(original, original.app, '其他账号')]) {
+    assert.notEqual(buildAccountFingerprint([renamed]), fingerprint);
+    assert.equal(buildDuplicateKey(renamed), buildDuplicateKey(original));
+    assert.equal(getBackupChangeState([renamed], fingerprint), 'changed');
+  }
+});
+
+test('fingerprint is consistent across legacy storage normalization and label pairing', () => {
+  const legacy = [{ id: 1, secret: PUBLIC_TEST_SECRET, issuer: 'Acme', name: 'alice' }];
+  assert.equal(buildAccountFingerprint(legacy), buildAccountFingerprint(legacy.map(normalizeAccount)));
+  const first = [sampleAccount({ secret: 'AAAA', name: 'alice' }), sampleAccount({ secret: 'BBBB', name: 'bob' })];
+  const swapped = [sampleAccount({ secret: 'AAAA', name: 'bob' }), sampleAccount({ secret: 'BBBB', name: 'alice' })];
+  assert.notEqual(buildAccountFingerprint(first), buildAccountFingerprint(swapped));
+  assert.equal(buildAccountFingerprint(first), buildAccountFingerprint(first.map(account => ({ ...account, pinned: true, sortOrder: 999, code: '000000', countdown: 1 }))));
+});
+
+test('old fingerprint requests a new backup and new fingerprint follows edits', () => {
+  const accounts = [sampleAccount()];
+  assert.equal(getBackupChangeState(accounts, 'n1:oldhash'), 'legacy');
+  assert.equal(getBackupChangeState(accounts, buildAccountFingerprint(accounts)), 'current');
+  assert.equal(getBackupChangeState([], 'empty'), 'current');
+  assert.equal(getBackupChangeState(accounts, 'empty'), 'changed');
+  assert.equal(getBackupChangeState(accounts, 'bad-record'), 'unavailable');
+});
+
+test('restoring old labels skips duplicates and preserves current edited labels', () => {
+  const before = sampleAccount();
+  const edited = renameAccount(before, '工作邮箱', '已编辑的账号');
+  const result = mergeAccounts([edited], [before]);
+  assert.equal(result.added, 0);
+  assert.equal(result.duplicates.length, 1);
+  assert.deepEqual(result.merged, [edited]);
 });

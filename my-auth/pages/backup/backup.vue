@@ -7,7 +7,7 @@
 换一部手机，账户也能带走。</text></view></view>
         <view class="status-card" :class="{ 'status-changed': backupStatus && backupStatus.changed }">
           <view class="status-label"><AppIcon name="lock" :size="15" /><text>备份状态</text></view>
-          <template v-if="backupStatus && backupStatus.available"><text class="status-title">{{ backupStatus.changed ? '有更新，建议再备份一次' : '账户与上次导出一致' }}</text><text class="status-detail">最近导出 {{ backupStatus.lastExportAt }}</text><text class="status-detail">已导出 {{ backupStatus.exportedCount }} 个账户</text></template>
+          <template v-if="backupStatus && backupStatus.available"><text class="status-title">{{ backupStatus.legacy ? '建议重新备份一次' : backupStatus.changed ? '有更新，建议再备份一次' : '账户与上次导出一致' }}</text><text v-if="backupStatus.legacy" class="status-detail">旧记录未检测名称变更，重新导出后可更新状态。</text><text class="status-detail">最近导出 {{ backupStatus.lastExportAt }}</text><text class="status-detail">已导出 {{ backupStatus.exportedCount }} 个账户</text></template>
           <template v-else><text class="status-title">{{ backupStatus ? backupStatus.error : '正在读取状态…' }}</text><text class="status-detail">保留一份设备之外的副本，换机时更从容。</text></template>
         </view>
         <view class="backup-actions">
@@ -49,7 +49,7 @@ import BusyOverlay from '@/components/BusyOverlay.vue';
 import { waitForFeedback } from '@/utils/feedback-render.js';
 
 import { createBackup, openBackup, BackupError } from '@/utils/backup-crypto.js';
-import { mergeAccounts, buildAccountFingerprint } from '@/utils/backup-merge.js';
+import { mergeAccounts, buildAccountFingerprint, getBackupChangeState } from '@/utils/backup-merge.js';
 import { getRandomBytes } from '@/utils/platform-random.js';
 import { pickFileForSave, pickFileForRead } from '@/utils/platform-file.js';
 
@@ -185,12 +185,17 @@ export default {
         this.backupStatus = { available: false, error: '状态不可用（账户存储异常）' };
         return;
       }
-      const currentFingerprint = buildAccountFingerprint(read.accounts);
+      const state = getBackupChangeState(read.accounts, meta.fingerprint);
+      if (state === 'unavailable') {
+        this.backupStatus = { available: false, error: '状态不可用（备份记录异常）' };
+        return;
+      }
       this.backupStatus = {
         available: true,
         lastExportAt: formatTime(meta.lastExportAt),
         exportedCount: meta.exportedCount || 0,
-        changed: currentFingerprint !== meta.fingerprint,
+        changed: state !== 'current',
+        legacy: state === 'legacy',
       };
     },
     // 读取现有账户：区分键不存在（正常空）与存储损坏（报错）。

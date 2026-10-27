@@ -1,8 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeAccount } from '../utils/account.js';
+import { normalizeAccount, renameAccount, validateAccountNames } from '../utils/account.js';
+import { generateTOTP } from '../utils/totp-core.js';
 
 const PUBLIC_TEST_SECRET = 'JBSWY3DPEHPK3PXP';
+
+test('renaming only replaces trimmed display names and never mutates the source', () => {
+  const source = Object.freeze({ id: 42, app: 'Acme', name: 'alice', issuer: 'Acme', accountName: 'alice', secret: PUBLIC_TEST_SECRET, algorithm: 'SHA512', digits: 8, period: 60, pinned: true, sortOrder: 7, extra: { preserved: true } });
+  const result = renameAccount(source, '  工作邮箱  ', '  alice@example.com  ');
+  assert.notEqual(result, source);
+  assert.deepEqual(result, { ...source, app: '工作邮箱', name: 'alice@example.com' });
+  assert.equal(source.app, 'Acme');
+  assert.equal(result.extra, source.extra);
+});
+
+test('name validation rejects blanks and non-strings without accepting partial edits', () => {
+  for (const [app, name] of [[' ', 'alice'], ['Acme', '\t\n'], [null, 'alice'], ['Acme', 123]]) {
+    assert.equal(validateAccountNames(app, name).valid, false);
+    assert.throws(() => renameAccount({ id: 1 }, app, name), /ACCOUNT_NAMES_REQUIRED/);
+  }
+  assert.equal(validateAccountNames('服务', '账户').valid, true);
+});
+
+test('renamed account keeps original identifiers and TOTP after simulated restart', () => {
+  const original = normalizeAccount({ id: 1, app: 'Acme', name: 'alice', issuer: 'Acme', accountName: 'alice', secret: PUBLIC_TEST_SECRET });
+  const updated = renameAccount(original, '个人账户', '我的邮箱');
+  const reloaded = normalizeAccount(JSON.parse(JSON.stringify(updated)));
+  assert.equal(reloaded.app, '个人账户');
+  assert.equal(reloaded.name, '我的邮箱');
+  assert.equal(reloaded.issuer, 'Acme');
+  assert.equal(reloaded.accountName, 'alice');
+  assert.equal(generateTOTP({ ...reloaded, timestampSeconds: 59 }), generateTOTP({ ...original, timestampSeconds: 59 }));
+});
 
 test('a complete account keeps its explicit values', () => {
   const input = {
