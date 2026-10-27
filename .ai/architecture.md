@@ -8,6 +8,10 @@
 
 - `my-auth/pages/home/home.vue`：账户列表、扫码、二维码解析、增删、本地存储，并维护单一秒级时钟 `now`，通过 `timestampSeconds` 下发给卡片。
 - `my-auth/components/AccountItem.vue`：单账户展示与验证码计算，接收父级 `timestampSeconds` 按时间窗口刷新，不持有自身定时器。
+- `my-auth/components/AppHeader.vue`、`AppIcon.vue`、`ServiceIcon.vue`、`ActionSheet.vue`：共用导航头、本地图标、服务图标与操作面板；`styles/theme.css` 定义视觉变量和共用样式。
+- `my-auth/components/AppDialog.vue`、`AppToast.vue`、`BusyOverlay.vue`：统一确认/说明、轻提示、备份等待反馈；卡片通过 notify 事件交由首页展示提示。`utils/feedback-render.js` 为同步计算前的绘制让渡，不是后台计算。
+- `my-auth/utils/backup-summary.js`：仅用于首页/设置的只读备份摘要，复用既有指纹函数；不更改账户或备份元信息。
+- `my-auth/pages.json`：三个页面均保留注册，移除 Tab；首页通过 `navigateTo` 进入设置或备份，再用 `navigateBack` 返回。首页 onShow 重读账户并启动单一时钟，onHide/onUnload/beforeUnmount 清理时钟。改版的 Android 验收待执行，取舍见 `.ai/decisions/2026-10-27-ui-navigation.md`。
 - `my-auth/utils/totp-core.js`：当前运行时使用的 TOTP 计算（Base32、SHA-1、HMAC-SHA1、动态截断），时间和配置通过参数传入。
 - `my-auth/utils/otpauth.js`：当前运行时使用的 `otpauth://` 解析与校验。
 - `my-auth/utils/account.js`：账户规范化，补齐缺失字段、保留未知字段、不静默修正非法值；纯逻辑，被 `home.vue` 加载存储时调用。
@@ -23,7 +27,9 @@
 
 调用关系：`backup.vue` → `createBackup(password, accounts, {randomBytes: getRandomBytes})`（注入 platform-random）→ `pickFileForSave(filename, json, callback)`（platform-file 写）；恢复 `pickFileForRead(callback)` → `openBackup(password, content)` → `mergeAccounts(existing, incoming)` → `uni.setStorageSync('accounts', merged)`。
 
-- `my-auth/tests/`：基于 Node `node:test` 的自动测试，`npm test` 运行（**62 项**：totp-core 9 + otpauth 10 + account 8 + backup-merge 16 + backup-crypto 19，含 Node crypto 独立对照），不进入运行时。
+备份页面为等待反馈将调用编排改成 async/await，原生回调以 Promise 包装，密码学与文件 IO 内部未改。busy 在开始让渡前设定、finally 清理；页面卸载使令牌失效，尚未开始的计算/页面写入不再继续；已发起的原生操作不声称被撤销。详情及未验边界见 `.ai/plans/2026-10-27-feedback-ui.md`。
+
+- `my-auth/tests/`：基于 Node `node:test` 的自动测试，`npm test` 运行（**73 项**：totp-core 9 + otpauth 10 + account 8 + backup-merge 16 + backup-crypto 30，含 Node crypto 独立对照），不进入运行时。
 
 当前还保留多套实验算法、页面副本和调试代码。引用前必须确认是否属于主运行链路，不能仅凭文件名判断。
 

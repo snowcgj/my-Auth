@@ -1,172 +1,187 @@
 <template>
-  <view class="home-container">
-    <!-- 最顶部的 -->
-      <view class="header">
-          <view class="logo-container">
-            <image src="/static/logo.png" class="logo"></image>
-            <text class="app-name">Auth</text>
-          </view>
-          <view class="icons">
-            <button @click="onHelp" class="icon-button">❓</button>
-            <button @click="onImport" class="icon-button">📥</button>
-            <button @click="onExport" class="icon-button">📤</button>
-          </view>
-        </view>
-       <!-- <button @click="saveAccounts">dd</button> -->
-    <view class="search-bar">
-      <input
-        :value="keyword"
-        @input="onSearchInput"
-        class="search-input"
-        placeholder="搜索服务或账户"
-      />
-    </view>
-
-    <!-- 账号列表 -->
-    <view class="account-list">
-      <AccountItem
-        v-for="account in displayAccounts"
-        :key="account.id"
-        :id="account.id"
-        :icon="account.icon"
-        :app="account.app"
-        :name="account.name"
-        :secret="account.secret"
-        :digits="account.digits"
-        :period="account.period"
-        :algorithm="account.algorithm"
-        :pinned="account.pinned"
-        :timestamp-seconds="now"
-        @delete-account="onDeleteAccount"
-        @edit-account="onEditAccount"
-        @toggle-pin="onTogglePin"
-      />
-      <view v-if="displayAccounts.length === 0" class="empty-tip">
-        <text>没有匹配的账户</text>
+  <view class="ui-page home-page">
+    <AppHeader title="Auth" subtitle="你的账户，随时就绪。" brand>
+      <button class="ui-icon-button" aria-label="打开设置" hover-class="ui-tap" @click="openSettings"><AppIcon name="settings" :size="20" /></button>
+    </AppHeader>
+    <view class="ui-content home-content">
+      <view v-if="accounts.length || keyword" class="search-box">
+        <AppIcon name="search" :size="18" />
+        <input class="search-input" :value="keyword" placeholder="搜索服务或账户" placeholder-class="ui-input-placeholder" confirm-type="search" @input="onSearchInput" />
+        <button v-if="keyword" class="clear-search" aria-label="清空搜索" @click="keyword = ''"><AppIcon name="close" :size="16" /></button>
+      </view>
+      <button v-if="accounts.length && !loadError && backupSummary.state !== 'current'" class="backup-notice" hover-class="ui-tap" @click="openBackup">
+        <AppIcon name="lock" :size="15" /><text>{{ backupSummary.title }}</text><AppIcon name="arrow" :size="14" />
+      </button>
+      <view v-if="loadError" class="empty-state error-state">
+        <text class="empty-title">暂时无法读取账户</text><text class="empty-description">原有数据未被覆盖，请稍后重试。</text>
+        <button class="ui-primary empty-action" @click="loadAccounts">重新读取</button>
+      </view>
+      <view v-else-if="loading" class="loading-tip"><text>正在读取账户…</text></view>
+      <view v-else-if="accounts.length === 0" class="empty-state">
+        <image class="empty-illustration" src="/static/ui/empty-accounts.png" mode="aspectFit" />
+        <text class="empty-title">从第一个账户开始</text>
+        <text class="empty-description">扫描网站提供的验证二维码
+下次登录，验证码就在这里。</text>
+        <button class="ui-primary empty-action" hover-class="ui-tap" @click="scanQRCode"><AppIcon name="scan" :size="18" light /><text class="ui-button-label">扫描二维码</text></button>
+        <button class="restore-link" hover-class="ui-tap" @click="openRestore">已有备份？从文件恢复</button>
+        <view class="privacy-note"><AppIcon name="lock" :size="13" /><text>验证码可离线生成 · 无需注册</text></view>
+      </view>
+      <view v-else-if="displayAccounts.length === 0" class="search-empty">
+        <AppIcon name="search" :size="28" /><text class="empty-title small-title">没有找到匹配的账户</text>
+        <text class="empty-description">试试服务名或账户邮箱。</text><button class="restore-link" @click="keyword = ''">清空搜索</button>
+      </view>
+      <view v-else>
+        <text v-if="keyword" class="result-label">找到 {{ displayAccounts.length }} 个账户</text>
+        <template v-for="group in accountGroups" :key="group.key">
+          <view v-if="!keyword" class="group-heading"><AppIcon v-if="group.key === 'pinned'" name="pin" :size="12" /><text>{{ group.label }}</text><text class="group-count">{{ group.accounts.length }}</text></view>
+          <AccountItem v-for="account in group.accounts" :key="account.id" :id="account.id" :icon="account.icon" :app="account.app" :name="account.name" :secret="account.secret" :digits="account.digits" :period="account.period" :algorithm="account.algorithm" :pinned="account.pinned" :timestamp-seconds="now" @delete-account="onDeleteAccount" @toggle-pin="onTogglePin" @more-options="menuAccountId = $event" @notify="showNotice" />
+        </template>
       </view>
     </view>
-
-    <!-- 浮动添加按钮 -->
-    <button @click="onAddAccount" class="floating-button">＋</button>
+    <button v-if="accounts.length && !loadError" class="add-account" hover-class="ui-tap" @click="onAddAccount"><AppIcon name="plus" :size="20" light /><text>添加账户</text></button>
+    <ActionSheet :open="addSheetOpen" title="添加账户" subtitle="扫描网站提供的验证二维码。" :actions="addActions" @close="addSheetOpen = false" @select="onAddAction" />
+    <ActionSheet :open="!!menuAccount" :title="menuAccount ? menuAccount.app : '账户'" :subtitle="menuAccount ? menuAccount.name : ''" :actions="accountActions" @close="menuAccountId = null" @select="onAccountAction" />
+    <AppDialog :open="!!dialog" :title="dialog ? dialog.title : ''" :description="dialog ? dialog.description : ''" :icon="dialog && dialog.type === 'delete' ? 'trash' : 'info'" :danger="!!dialog && dialog.type === 'delete'" :show-cancel="!!dialog && dialog.type === 'delete'" :confirm-text="dialog && dialog.type === 'delete' ? '删除账户' : '知道了'" @cancel="dialog = null" @confirm="onDialogConfirm">
+      <template v-if="dialog && dialog.type === 'delete'">
+        <view class="delete-identity"><text class="delete-service">{{ dialog.service }}</text><text class="delete-name">{{ dialog.name }}</text></view>
+        <text class="dialog-copy">删除后，将无法在本机生成该账户的验证码。请确认已保留其他验证方式或可恢复的备份。</text>
+      </template>
+      <text v-else-if="dialog" class="dialog-copy">{{ dialog.description }}</text>
+    </AppDialog>
+    <AppToast ref="notice" />
   </view>
 </template>
 
 <script>
 import AccountItem from '@/components/AccountItem.vue';
+import AppHeader from '@/components/AppHeader.vue';
+import AppIcon from '@/components/AppIcon.vue';
+import ActionSheet from '@/components/ActionSheet.vue';
+import AppDialog from '@/components/AppDialog.vue';
+import AppToast from '@/components/AppToast.vue';
 import { parseOtpAuthUri } from '@/utils/otpauth.js';
 import { normalizeAccount } from '@/utils/account.js';
-
+import { readBackupSummary } from '@/utils/backup-summary.js';
 
 export default {
-  components: {
-    AccountItem,
-  },
+  components: { AccountItem, AppHeader, AppIcon, ActionSheet, AppDialog, AppToast },
   data() {
     return {
-      now: Math.floor(Date.now() / 1000),
-      timer: null,
-      keyword: '',
-      accounts: [],
+      now: Math.floor(Date.now() / 1000), timer: null, keyword: '', accounts: [],
+      loading: true, loadError: '', pageVisible: false, addSheetOpen: false, menuAccountId: null,
+      dialog: null,
+      backupSummary: { state: 'unavailable', title: '备份状态暂不可用' },
+      addActions: [{ value: 'scan', label: '扫描二维码', icon: 'scan' }],
     };
   },
-  mounted() {
-    this.startClock();
-    this.loadAccounts();
-  },
   onShow() {
-    // 回到前台时立即刷新时间，避免后台节流导致验证码停留在旧窗口
+    this.pageVisible = true;
     this.now = Math.floor(Date.now() / 1000);
-    // 重载账户：任何来源的存储变更（恢复、导入）都能在切回首页时反映。
-    // 账户数据量小，重载成本可忽略；loadAccounts fail 时置空不覆盖存储。
     this.loadAccounts();
+    this.startClock();
   },
-  beforeUnmount() {
-    this.stopClock();
+  onHide() { this.pageVisible = false; this.stopClock(); this.addSheetOpen = false; this.menuAccountId = null; this.dialog = null; this.$refs.notice?.clear(); },
+  onUnload() { this.pageVisible = false; this.stopClock(); },
+  beforeUnmount() { this.pageVisible = false; this.stopClock(); },
+  onBackPress() {
+    if (this.dialog) { this.dialog = null; return true; }
+    if (this.menuAccountId !== null) { this.menuAccountId = null; return true; }
+    if (this.addSheetOpen) { this.addSheetOpen = false; return true; }
+    return false;
+  },
+  watch: {
+    // 只刷新展示摘要，不使用深度 watcher 或自动保存。
+    accounts() { this.backupSummary = readBackupSummary(this.accounts); },
   },
   computed: {
+    menuAccount() { return this.accounts.find(account => account.id === this.menuAccountId) || null; },
+    accountActions() {
+      return [
+        { value: 'pin', label: this.menuAccount && this.menuAccount.pinned ? '取消置顶' : '置顶账户', icon: 'pin' },
+        { value: 'delete', label: '删除账户', icon: 'trash', danger: true },
+      ];
+    },
     displayAccounts() {
       const keyword = this.keyword.trim().toLowerCase();
-      const filtered = keyword
-        ? this.accounts.filter(account => {
-            const text = [account.app, account.name, account.issuer, account.accountName]
-              .filter(value => value)
-              .join(' ')
-              .toLowerCase();
-            return text.includes(keyword);
-          })
-        : this.accounts.slice();
-
-      return filtered.sort((previous, next) => {
-        if (previous.pinned !== next.pinned) {
-          return previous.pinned ? -1 : 1;
-        }
-        if (previous.sortOrder !== next.sortOrder) {
-          return previous.sortOrder - next.sortOrder;
-        }
-        return previous.id - next.id;
-      });
+      const filtered = keyword ? this.accounts.filter(account =>
+        [account.app, account.name, account.issuer, account.accountName].filter(Boolean).join(' ').toLowerCase().includes(keyword)
+      ) : this.accounts.slice();
+      return filtered.sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.sortOrder - b.sortOrder || a.id - b.id);
+    },
+    accountGroups() {
+      const pinned = this.displayAccounts.filter(account => account.pinned);
+      const others = this.displayAccounts.filter(account => !account.pinned);
+      return [
+        { key: 'pinned', label: '置顶', accounts: pinned },
+        { key: 'all', label: '全部账户', accounts: others },
+      ].filter(group => group.accounts.length);
     },
   },
   methods: {
+    showNotice(message, kind = 'success') { this.$refs.notice?.show(message, kind); },
     startClock() {
       this.stopClock();
       this.timer = setInterval(() => {
-        this.now = Math.floor(Date.now() / 1000);
+        if (this.pageVisible) this.now = Math.floor(Date.now() / 1000);
       }, 1000);
     },
-
     stopClock() {
-      if (this.timer) {
-        clearInterval(this.timer);
-        this.timer = null;
-      }
+      if (this.timer !== null) { clearInterval(this.timer); this.timer = null; }
     },
-
     loadAccounts() {
-      // 读取本地账户；getStorage 的 fail 无法区分"无数据"与"真实错误"，
-      // 故 fail 时按空列表处理。已移除深度 watcher，不会在读取时回写覆盖原存储。
-      uni.getStorage({
-        key: 'accounts',
-        success: (res) => {
-          const stored = Array.isArray(res.data) ? res.data : [];
-          this.accounts = stored.map(account => normalizeAccount(account));
-        },
-        fail: () => {
-          this.accounts = [];
-        },
-      });
+      this.loading = true;
+      try {
+        // 先检查键是否存在，避免将读取异常误判为首次使用；读取不回写。
+        const info = uni.getStorageInfoSync();
+        if (!Array.isArray(info.keys)) throw new Error('STORAGE_INFO_INVALID');
+        const stored = info.keys.includes('accounts') ? uni.getStorageSync('accounts') : [];
+        if (!Array.isArray(stored) || stored.some(account => !account || typeof account !== 'object' || Array.isArray(account))) throw new Error('ACCOUNTS_INVALID');
+        this.accounts = stored.map(account => normalizeAccount(account));
+        this.loadError = '';
+        this.backupSummary = readBackupSummary(this.accounts);
+      } catch (_) { this.loadError = 'ACCOUNTS_READ_FAILED'; }
+      this.loading = false;
     },
-
+    openSettings() { uni.navigateTo({ url: '/pages/settings/settings' }); },
+    openBackup() { uni.navigateTo({ url: '/pages/backup/backup' }); },
+    openRestore() { uni.navigateTo({ url: '/pages/backup/backup?intent=restore' }); },
+    onAddAccount() { if (!this.loadError) this.addSheetOpen = true; },
+    onAddAction(action) {
+      this.addSheetOpen = false;
+      if (action === 'scan') this.scanQRCode();
+    },
+    onAccountAction(action) {
+      const account = this.menuAccount;
+      this.menuAccountId = null;
+      if (!account) return;
+      if (action === 'pin') this.onTogglePin(account.id);
+      if (action === 'delete') this.onDeleteAccount(account.id);
+    },
     onSearchInput(event) {
       this.keyword = event.detail.value;
     },
-
-    // 删除账户
     onDeleteAccount(accountId) {
+      this.$refs.notice?.clear();
       const account = this.accounts.find(item => item.id === accountId);
       if (!account) {
         return;
       }
 
-      uni.showModal({
-        title: '删除账户',
-        content: `${account.app} / ${account.name}`,
-        confirmText: '删除',
-        cancelText: '取消',
-        success: (result) => {
-          if (!result.confirm) {
-            return;
-          }
-          const next = this.accounts.filter(item => item.id !== accountId);
-          if (!this.persistAccounts(next)) {
-            uni.showToast({ title: '保存失败，删除未生效', icon: 'none' });
-            return;
-          }
-          this.accounts = next;
-        },
-      });
+      this.dialog = { type: 'delete', title: '删除这个账户？', id: accountId, service: account.app, name: account.name };
     },
-
+    onDialogConfirm() {
+      const pending = this.dialog;
+      this.dialog = null;
+      if (!pending || pending.type !== 'delete' || this.loadError) return;
+      if (!this.accounts.some(account => account.id === pending.id)) return;
+      const next = this.accounts.filter(account => account.id !== pending.id);
+      if (!this.persistAccounts(next)) {
+        this.showNotice('保存失败，删除未生效', 'error');
+        return;
+      }
+      this.accounts = next;
+      this.showNotice('账户已删除');
+    },
     onTogglePin(accountId) {
       const next = this.accounts.map(account =>
         account.id === accountId
@@ -174,137 +189,10 @@ export default {
           : account
       );
       if (!this.persistAccounts(next)) {
-        uni.showToast({ title: '保存失败，置顶未生效', icon: 'none' });
+        this.showNotice('保存失败，置顶未生效', 'error');
         return;
       }
       this.accounts = next;
-    },
-
-    // 修改账户，跳转到编辑页面
-    onEditAccount(accountId) {
-      uni.showToast({
-        title: '功能暂未开发，敬请期待',
-        //将值设置为 success 或者直接不用写icon这个参数
-        icon: 'error',
-        //显示持续时间为 2秒
-        duration: 2000
-      })  
-      // const account = this.accounts.find(account => account.id === accountId);
-      // console.log("修改账户的：")
-      // console.log(this.accounts)
-      // uni.navigateTo({
-      //   url: `/pages/other/edit-account?id=${accountId}`
-      //   // url: `/pages/other/edit-account`
-      // });
-    },
-
-    saveAccountsToStorage() {
-      const accountsStr = JSON.stringify(this.accounts);
-
-      // 针对不同平台的存储
-      if (process.env.VUE_APP_PLATFORM === 'h5') {
-        // H5 平台：使用 localStorage
-        localStorage.setItem('accounts', accountsStr);
-        console.log('Accounts saved to localStorage successfully!');
-      } else {
-        // APP 和小程序：使用 FileSystemManager
-        const filePath = `${uni.env.USER_DATA_PATH}/accounts.json`;
-        uni.getFileSystemManager().writeFile({
-          filePath,
-          data: accountsStr,
-          encoding: 'utf8',
-          success: () => {
-            console.log('Accounts saved to file successfully!');
-          },
-          fail: (err) => {
-            console.error('Failed to save accounts:', err);
-          },
-        });
-      }
-    },
-    loadAccountsFromStorage() {
-      // 针对不同平台的读取逻辑
-      if (process.env.VUE_APP_PLATFORM === 'h5') {
-        // H5 平台：使用 localStorage
-        const accountsStr = localStorage.getItem('accounts');
-        if (accountsStr) {
-          this.accounts = JSON.parse(accountsStr);
-        }
-      } else {
-        // APP 和小程序：使用 FileSystemManager
-        const filePath = `${uni.env.USER_DATA_PATH}/accounts.json`;
-        uni.getFileSystemManager().readFile({
-          filePath,
-          encoding: 'utf8',
-          success: (res) => {
-            this.accounts = JSON.parse(res.data);
-          },
-          fail: (err) => {
-            console.error('Failed to load accounts:', err);
-          },
-        });
-      }
-    },
-    myfunc(){
-      console.log(process.env.VUE_APP_PLATFORM);
-    },
-    onExport(){
-      uni.showToast({
-        title: '功能暂未开发，敬请期待',
-        //将值设置为 success 或者直接不用写icon这个参数
-        icon: 'error',
-        //显示持续时间为 2秒
-        duration: 2000
-      })  
-    },
-    onHelp() {
-      uni.showToast({
-        title: '功能暂未开发，敬请期待',
-        //将值设置为 success 或者直接不用写icon这个参数
-        icon: 'error',
-        //显示持续时间为 2秒
-        duration: 2000
-      })
-      console.log('帮助功能被点击');
-    },
-    onImport() {
-      uni.showToast({
-        title: '功能暂未开发，敬请期待',
-        //将值设置为 success 或者直接不用写icon这个参数
-        icon: 'error',
-        //显示持续时间为 2秒
-        duration: 2000
-      })  
-    },
-    // onEditAccount(account) {
-    //   console.log('编辑账户', account);
-    // },
-    onMoreOptions(account) {
-      // 预留入口，不输出账户对象
-    },
-
-    onAddAccount() {
-      uni.showActionSheet({
-      itemList: ['扫描二维码'], // 提示选项
-      success: (res) => {
-          this.scanQRCode(); // 调用扫描二维码功能
-      },
-      fail: (err) => {
-        console.error('操作取消：', err);
-      }
-      // uni.showActionSheet({
-      // itemList: ['扫描二维码', '选择图片'], // 提示选项
-      // success: (res) => {
-      //   if (res.tapIndex === 0) {
-      //     this.scanQRCode(); // 调用扫描二维码功能
-      //   } else if (res.tapIndex === 1) {
-      //     this.selectImage(); // 调用选择图片功能
-      //   }
-      // },
-      // fail: (err) => {
-      //   console.error('操作取消：', err);
-      // }
-    });
     },
     scanQRCode() {
       uni.scanCode({
@@ -312,22 +200,8 @@ export default {
           this.parseQRCode(res.result);
         },
         fail: (err) => {
-          console.error('扫描失败：', err);
-          uni.showToast({ title: '扫描失败，请重试', icon: 'none' });
-        }
-      });
-    },
-
-    selectImage() {
-      uni.chooseImage({
-        count: 1,
-        success: (res) => {
-          const filePath = res.tempFilePaths[0];
-          this.decodeQRCode(filePath); // 调用解析图片二维码方法
-        },
-        fail: (err) => {
-          console.error('选择图片失败：', err);
-          uni.showToast({ title: '选择图片失败', icon: 'none' });
+          if (/cancel/i.test(err && err.errMsg || '')) return;
+          this.dialog = { type: 'info', title: '暂时无法扫描', description: '请确认已允许相机权限，再重新尝试扫描。' };
         }
       });
     },
@@ -336,7 +210,7 @@ export default {
       try {
         parsed = parseOtpAuthUri(data);
       } catch (error) {
-        uni.showToast({ title: '无法识别或不支持的二维码', icon: 'none' });
+        this.dialog = { type: 'info', title: '暂时无法添加', description: '请扫描网站提供的动态验证码二维码。目前支持 SHA-1 TOTP，其他类型暂不能添加。' };
         return;
       }
 
@@ -360,25 +234,12 @@ export default {
     addAccount(account) {
       const next = [...this.accounts, account];
       if (!this.persistAccounts(next)) {
-        uni.showToast({ title: '保存失败，未添加账户', icon: 'none' });
+        this.showNotice('保存失败，未添加账户', 'error');
         return;
       }
       this.accounts = next;
-      uni.showToast({ title: '账户添加成功', icon: 'success' });
+      this.showNotice('账户添加成功');
     },
-    // saveAccounts() {
-    //     // 将 accounts 数组存储到本地
-    //     uni.setStorage({
-    //       key: 'accounts', // 存储的键名
-    //       data: this.accounts, // 存储的数据
-    //       success: () => {
-    //         console.log('账户数据已成功保存到本地');
-    //       },
-    //       fail: (err) => {
-    //         console.error('保存账户数据失败：', err);
-    //       }
-    //     });
-    // },
     persistAccounts(nextAccounts) {
       // 同步写入并返回结果；调用方据此决定是否更新内存与提示。
       try {
@@ -388,106 +249,38 @@ export default {
         console.error('账户数据存储失败');
         return false;
       }
-    },
-    getIcon(appName) {
-      // 将应用名称转为小写并拼接为 Iconify 的图标名称
-      const iconName = `mdi:${appName.toLowerCase()}`;
-      return iconName; // 动态生成图标名称
-    },
-
-   } 
-
+    }
+  },
 };
-
 </script>
 
 <style scoped>
-
-
-.home-container {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background-color: #f0f0f5;
-
-}
-
-
-.app-name{
-align-self: center;
-
-}
-
-.logo {
-  width: 50px; /* 图标的宽度和高度 */
-  height: 50px;
-  margin: 15px; /* 图标与右侧信息之间的间距 */
-}
-
-.header{
-display: flex;
-flex-direction: row;
-justify-content: space-between; 
-background-color: aquamarine;
-}
-.logo-container{
-display: flex;
-flex-direction: row;
-}
-
-.icons{
-margin: 15px;
-display: flex;
-flex-direction: row;
-justify-content: center;
-
-}
-
-.icon-button{
-  margin:5px
-}
-
-.floating-button{
-  border-radius: 20%;
-  position: fixed;
-  right: 20px;
-  bottom: 60px;
-  transition: width 0.5s, height 0.5s;
-}
-
-/* 其余的样式保持不变 */
-
-/* 在页面或组件的 style 中 */
-.account-list {
-  height: 600px;            /*根据需要设置固定高度 */
-  flex-grow: 1; /* 占满剩余空间 */
-  overflow-y: auto; /* 垂直滚动 */
-  -webkit-overflow-scrolling: touch; /* 增加滚动的平滑效果 */
-  scrollbar-width: none; /* 隐藏滚动条（针对 Firefox） */
-}
-
-.account-list::-webkit-scrollbar {
-  display: none; /* 隐藏滚动条（针对 WebKit 浏览器） */
-}
-
-.search-bar {
-  padding: 8px 15px;
-  background-color: #ffffff;
-  border-bottom: 0.5px solid #e0e0e0;
-}
-
-.search-input {
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 10px;
-  background-color: #f0f0f5;
-  font-size: 14px;
-}
-
-.empty-tip {
-  padding: 40px 0;
-  text-align: center;
-  color: #999;
-  font-size: 14px;
-}
+.home-content { padding-bottom: 110px; padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+.search-box { display: flex; align-items: center; height: 46px; padding: 0 13px; background: #fff; border: 1px solid var(--auth-line); border-radius: 14px; }
+.search-input { flex: 1; min-width: 0; height: 44px; margin-left: 10px; font-size: 13px; }
+.clear-search { display: flex; align-items: center; justify-content: center; width: 36px; height: 40px; margin: 0 -8px 0 0; padding: 0; background: transparent; }
+.backup-notice { display: flex; align-items: center; width: 100%; min-height: 36px; margin: 12px 0 0; padding: 9px 11px; background: #f1eedc; border-radius: 11px; font-size: 11px; line-height: 1.6; text-align: left; color: #6e684a; }
+.backup-notice text { flex: 1; margin: 0 7px; }
+.group-heading { display: flex; align-items: center; margin: 20px 3px 10px; font-size: 12px; color: var(--auth-muted); }
+.group-heading text { margin-left: 5px; }
+.group-heading .group-count { flex: 1; text-align: right; font-size: 11px; color: #959c8c; }
+.result-label { display: block; margin: 18px 3px 12px; font-size: 12px; color: var(--auth-muted); }
+.add-account { position: fixed; z-index: 20; right: 18px; bottom: 24px; bottom: calc(24px + env(safe-area-inset-bottom)); display: flex; align-items: center; height: 50px; margin: 0; padding: 0 17px; background: var(--auth-ink); color: #fff; border-radius: 17px; box-shadow: 0 5px 14px rgba(37,40,36,.12); font-size: 14px; line-height: 1; }
+.add-account text { margin-left: 7px; }
+.empty-state { padding-top: 35px; text-align: center; }
+.empty-illustration { display: block; width: 225px; height: 210px; margin: 0 auto 22px; }
+.empty-title { display: block; font-size: 22px; line-height: 1.5; font-weight: 700; }
+.empty-description { display: block; margin-top: 12px; font-size: 13px; line-height: 1.9; color: var(--auth-muted); white-space: pre-line; }
+.empty-action { width: 180px; margin: 26px auto 0; }
+.restore-link { display: block; margin: 15px auto 0; padding: 9px; background: transparent; color: #7c856f; font-size: 13px; line-height: 1.7; }
+.privacy-note { display: flex; align-items: center; justify-content: center; margin-top: 38px; color: #939b88; font-size: 11px; }
+.privacy-note text { margin-left: 5px; }
+.search-empty { display: flex; align-items: center; flex-direction: column; padding-top: 70px; text-align: center; }
+.small-title { margin-top: 22px; font-size: 18px; }
+.error-state { padding-top: 65px; }
+.loading-tip { padding-top: 50px; text-align: center; color: var(--auth-muted); font-size: 13px; }
+.delete-identity { padding: 13px 14px; margin-bottom: 14px; background: #f0f0e8; border-radius: 13px; }
+.delete-service { display: block; font-size: 14px; font-weight: 600; line-height: 1.7; overflow-wrap: anywhere; }
+.delete-name { display: block; margin-top: 4px; font-size: 12px; color: var(--auth-muted); line-height: 1.7; overflow-wrap: anywhere; }
+.dialog-copy { display: block; color: var(--auth-muted); font-size: 13px; line-height: 1.9; }
 </style>

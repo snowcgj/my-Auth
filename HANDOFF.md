@@ -15,9 +15,13 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 
 ## 3. 当前状态
 
+**本次阶段存档补充**：用户已确认 Android 新界面效果满意，并确认统一弹窗、删除取消/遮罩/返回、备份等待提示及文件选择取消后可重试等指定检查全部通过。用户已授权合成一次本地提交，不推送。下列早期“真机待验”条目为实施阶段记录，当前准确验收范围见 `.ai/plans/2026-10-27-feedback-ui.md` 末尾。73 项测试已通过，提交收尾仅改文档，未重复跑全量测试。后续先做相册识别，再独立扩展 SHA256/SHA512；两项当前均未实现。
+
 - **最新提交**：见 `git log --oneline -3`（本次阶段存档含代码与文档两次提交）
 - **测试**：`cd my-auth/my-auth && npm test` → **73 项通过**（totp-core 9 + otpauth 10 + account 8 + backup-merge 16 + backup-crypto 30，含 Node crypto 独立对照 + 参数校验防御 + spy 验证不执行派生），耗时约 81s（PBKDF2 十万次迭代）
 - **已完成**：
+  - **统一弹窗与等待反馈（2026-10-27，本地验证完成、真机待验）**：AppDialog/AppToast/BusyOverlay，删除确认与设置说明/隐私不再用系统弹窗，复制提示统一；备份先提交反馈并让出短任务再同步计算，finally 释放 busy、卸载后令牌失效。73 项测试、12 个 SFC 检查、27 项 DOM 检查、8 组模拟备份场景通过。实际加载动画/SAF 返回需真机复验，未迁移线程；见 `.ai/plans/2026-10-27-feedback-ui.md`。
+  - **视觉与导航改版（2026-10-27，代码完成、真机待验）**：用户确认原型后接入暖白/淡紫首页、服务图标、底部操作面板、设置与备份分步界面；移除 Tab，保留三页注册，使用 navigateTo/navigateBack。首页 onShow 启动时钟并重载，onHide/onUnload 停止。核心算法、备份协议、SAF 不变。73 项测试与 Vue SFC 检查通过；浏览器交互检查为模拟 uni API，不能替代 Android。下一步先按 `.ai/plans/2026-10-27-ui-refresh.md` 真机验收。
   - 第一批稳定性重构 + 核心体验（搜索/复制/置顶/删除确认）+ 评审修订批，Android 真机核心流程回归通过
   - **加密备份最小验证链路（2026-10-26 ~ 10-27）**：加密核心 + 合并逻辑 + 平台适配（SecureRandom + SAF）+ 真机验证页跑通。详见 `.ai/plans/2026-10-26-encrypted-backup.md` 与 `.ai/decisions/2026-10-26-encrypted-backup.md`
   - **批次 C 正式 UI（2026-10-27，真机验收通过）**：`backup.vue` 重写为正式备份与恢复流程（密码二次确认、恢复预览、确认合并、读取失败防御、防重复操作、1MB 文件上限、备份状态展示）；`backup-crypto.js` 加参数校验（password 类型、iterations 精确接受 100000、salt/iv 字节数）；`platform-file.js` 加防重复操作 + 大小上限统一命名。8 项 Android 真机测试全部通过。
@@ -32,13 +36,13 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
   - `utils/platform-file.js`：`pickFileForSave`/`pickFileForRead`/`writeSafJsonVerified`，Android 走 SAF（`ACTION_CREATE/OPEN_DOCUMENT` + `ContentResolver`），逐字节 `write(int)`/`read()` 绕开数组参数桥接问题
 - **页面/组件**：
   - `pages/home/home.vue`：账户列表、扫码、增删、本地存储；`onShow` 重载 accounts（任何存储变更切回首页即反映）
-  - `pages/backup/backup.vue`：**正式备份与恢复流程**（批次 C 代码完成，待真机验收）。创建备份读真实 accounts + 密码二次确认 + SAF 导出读回一致才写 backup_meta；恢复选文件→输密码→解密预览新增/重复→确认才合并→写入前重新读取现有账户；默认 skip 重复；读取失败/取消/错密码/损坏/写入失败均不改原账户；busy 防重复；不记录密码/账户/完整 URI
-  - `components/AccountItem.vue`：`<text>⋮</text>` 替代 `<uni-icons>`（消除每秒告警）
+  - `pages/backup/backup.vue`：正式备份与恢复流程（改版前批次 C 已真机验收；本轮视觉/导航调整待重新验收）。创建备份读真实 accounts + 密码二次确认 + SAF 导出读回一致才写 backup_meta；恢复选文件→输密码→解密预览新增/重复→确认才合并→写入前重新读取现有账户；默认 skip 重复；读取失败/取消/错密码/损坏/写入失败均不改原账户；busy 防重复；不记录密码/账户/完整 URI
+  - `components/AccountItem.vue`：Composition API；监听窗口和配置，无独立时钟；服务本地图标/首字符回退、6/8 位分组与复制、倒计时环，更多操作交由首页 ActionSheet。首次 props 与设备适配待真机复验。
 - **旧实现**：`utils/finial.js` 已被取代、未被主链路引用，暂未删除（待清理）
 
 ## 4. 必须遵守的约定（写代码前看）
 
-- **持久化**：账户状态单一来源；增删置顶"先 `persistAccounts(next)` 成功再赋值 `this.accounts` + 提示，失败保留原状态并报错"；不用深度 watcher 自动保存；`loadAccounts()` 读取不回写、失败置空不覆盖。
+- **持久化**：账户状态单一来源；增删置顶"先 `persistAccounts(next)` 成功再赋值 `this.accounts` + 提示，失败保留原状态并报错"；不用深度 watcher 自动保存；`loadAccounts()` 读取不回写，失败保留已有内存、显示错误并隐藏账户操作，不按空数组回写。
 - **恢复写回**（验证页已实现，正式功能沿用）：读取现有账户失败**立即终止**，不按空数组继续合并（否则覆盖原存储）；解密/合并/写回任一步失败则存储不变。
 - **uni-app App 真机踩坑**（本机观测，非框架通则）：
   1. 子组件 `<input>` 不用 v-model 驱动计算属性过滤（用 `:value`+`@input`）。
@@ -61,15 +65,17 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 - 尚未覆盖的异常用例（可选）：1MB 上限拒绝（需大文件）、backup_meta 写失败分别说明（需模拟存储失败）、存储损坏检测（需模拟外部篡改）、恢复后备份状态刷新（已实现未真机验证）。
 
 **清理**
-- 删除旧 `utils/finial.js`（确认无引用后）；清理 home.vue 死代码 `saveAccountsToStorage/loadAccountsFromStorage/myfunc`；清理实验性/未用文件。
+- 删除旧 `utils/finial.js`（确认无引用后）；清理实验性/未用文件。home.vue 的旧 FileSystemManager 死代码已随本轮页面改版移除；旧资源与实验文件未删除。
 
 **真机用例补测**
 - 参数乱序、URL 编码账户名、digits=8/period=60、应被拒绝（HOTP/SHA256）的二维码。
 
 **后续功能路线**
-1. 加密备份正式 UI（批次 C/D）
+用户已确认上一轮视觉满意并提供 Android 截图；这不等于全部功能复验通过。本轮优先真机验收新弹窗与等待反馈，随后实现相册识别，再独立扩展 SHA256/SHA512（现仍拒绝，不要改文档说已支持）。
+
+1. 本轮视觉与导航改版 Android 验收（含原备份流程回归）；此前 receiveTasks 每秒报错需观察，尚未确认修复
 2. 手动添加与编辑账户
-3. 视觉改版 + 深色模式
+3. 深色模式（本轮未实现，不展示假开关）
 4. 本地密钥保护 + 应用锁
 
 **待定位**
@@ -79,7 +85,7 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 
 1. 读：`AGENTS.md` → `.ai/project.md` → `.ai/architecture.md` → `.ai/conventions.md` → `.ai/security.md`。
 2. 读加密备份相关：`.ai/plans/2026-10-26-encrypted-backup.md`（设计+进度）→ `.ai/decisions/2026-10-26-encrypted-backup.md`（技术取舍）→ `.ai/plans/2026-10-26-saf-write-0kb-issue.md`（SAF 故障过程与结论）。
-3. 跑 `cd my-auth/my-auth && npm test` 确认 62 项基线通过。
+3. 在内层应用目录运行 `npm test` 确认 73 项基线通过（约 76~81 秒）。
 4. 用 HBuilderX 打开 `my-auth/`，USB 真机运行确认基线可用。
 5. 与用户对齐本次要做什么，再动代码。
 
