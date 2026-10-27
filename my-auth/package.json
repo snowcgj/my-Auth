@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "test": "node --experimental-default-type=module --test tests/totp-core.test.mjs tests/otpauth.test.mjs tests/account.test.mjs"
+    "test": "node --experimental-default-type=module --test tests/totp-core.test.mjs tests/otpauth.test.mjs tests/account.test.mjs tests/backup-merge.test.mjs tests/backup-crypto.test.mjs"
   },
   "dependencies": {
     "crypto-js": "^4.2.0",

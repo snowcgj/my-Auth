@@ -16,7 +16,7 @@
 
       <button @click="onMoreOptions" class="more-options-button">
         <!-- <img src="/static/logo.png" alt="More" class="icon-image" /> -->
-        <uni-icons type="circle" size="30"></uni-icons>
+        <text>⋮</text>
       </button>
     
     </view>

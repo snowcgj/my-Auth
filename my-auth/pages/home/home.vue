@@ -76,6 +76,9 @@ export default {
   onShow() {
     // 回到前台时立即刷新时间，避免后台节流导致验证码停留在旧窗口
     this.now = Math.floor(Date.now() / 1000);
+    // 重载账户：任何来源的存储变更（恢复、导入）都能在切回首页时反映。
+    // 账户数据量小，重载成本可忽略；loadAccounts fail 时置空不覆盖存储。
+    this.loadAccounts();
   },
   beforeUnmount() {
     this.stopClock();
