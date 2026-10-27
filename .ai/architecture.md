@@ -12,7 +12,18 @@
 - `my-auth/utils/otpauth.js`：当前运行时使用的 `otpauth://` 解析与校验。
 - `my-auth/utils/account.js`：账户规范化，补齐缺失字段、保留未知字段、不静默修正非法值；纯逻辑，被 `home.vue` 加载存储时调用。
 - `my-auth/utils/finial.js`：旧实现，已被上述模块取代，暂未删除，待清理引用后移除。
-- `my-auth/tests/`：基于 Node `node:test` 的自动测试，`npm test` 运行（27 项），不进入运行时。
+
+**加密备份相关模块**（2026-10-26 ~ 10-27 新增，最小验证链路已跑通）：
+
+- `my-auth/utils/backup-merge.js`：纯逻辑，`serializeForBackup`（剔除 code/countdown）、`buildDuplicateKey`（secret 小写）、`buildAccountFingerprint`（djb2 变体指纹）、`mergeAccounts`（skip 策略，保留现有 pinned/sortOrder）。不依赖 `uni.*`/Node `Buffer`/`crypto`。
+- `my-auth/utils/backup-crypto.js`：纯逻辑加密核心，`createBackup`/`openBackup` + `BackupError`。AES-256-CBC + PBKDF2-HMAC-SHA256(100000) + HMAC-SHA256(EtM)。**依赖注入** `options.randomBytes`（返回 crypto-js WordArray），核心不碰平台 API，不可用抛 `NO_SECURE_RANDOM` 禁止导出。
+- `my-auth/utils/platform-random.js`：平台适配层，`getRandomBytes(n)`。Android 走 `java.security.SecureRandom` via Native.js（`reflect.Array.newInstance(Byte.TYPE, n)` + `sr.nextBytes`），其他走 Web Crypto，不可用返回 null（由调用方抛错）。
+- `my-auth/utils/platform-file.js`：平台适配层，`pickFileForSave`/`pickFileForRead`/`writeSafJsonVerified`。Android 走 SAF（`ACTION_CREATE/OPEN_DOCUMENT` + `ContentResolver.openOutputStream/openInputStream` 直接读写 `content://` URI，不转文件路径、不加存储权限）。逐字节 `write(int)`/`read()` 绕开 `read(byte[])` 数组参数桥接问题（本机观测）。`onActivityResult` 覆盖写法（两参数 `startActivityForResult` + `Activity.onActivityResult = function(...)`，三参数带 callback 版本在本机不触发）。
+- `my-auth/pages/backup/backup.vue`：**最小真机验证页**（非正式 UI），调用 backup-crypto + backup-merge + platform-random + platform-file，验证加密往返/SAF IO/合并写回。导出硬编码 `testAccount()` 不读真实存储。
+
+调用关系：`backup.vue` → `createBackup(password, accounts, {randomBytes: getRandomBytes})`（注入 platform-random）→ `pickFileForSave(filename, json, callback)`（platform-file 写）；恢复 `pickFileForRead(callback)` → `openBackup(password, content)` → `mergeAccounts(existing, incoming)` → `uni.setStorageSync('accounts', merged)`。
+
+- `my-auth/tests/`：基于 Node `node:test` 的自动测试，`npm test` 运行（**62 项**：totp-core 9 + otpauth 10 + account 8 + backup-merge 16 + backup-crypto 19，含 Node crypto 独立对照），不进入运行时。
 
 当前还保留多套实验算法、页面副本和调试代码。引用前必须确认是否属于主运行链路，不能仅凭文件名判断。
 

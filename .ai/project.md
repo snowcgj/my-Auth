@@ -47,6 +47,16 @@ my-Auth 是一个本地 TOTP 二次验证器，用途类似 Google Authenticator
 - 核心体验：搜索过滤、点击复制、置顶与排序、删除二次确认；不支持配置的账户显示"配置不支持"。
 - 旧 `utils/finial.js` 已被取代但暂未删除；微信小程序与 H5 未验证。计划与回归记录见 `.ai/plans/2026-10-26-android-stability-batch1.md`。
 
+### 加密备份最小验证链路（2026-10-26 ~ 10-27）
+
+在 `0b27c16` 基线上推进加密备份，**最小真机验证链路已跑通，正式 UI 未完成**：
+
+- 新增纯逻辑模块 `utils/backup-merge.js`（合并去重 skip）、`utils/backup-crypto.js`（AES-256-CBC + PBKDF2-HMAC-SHA256(100000) + HMAC-SHA256 EtM，依赖注入随机源）与 `tests/`（`npm test` 升至 **62 项**，含 Node crypto 独立对照）。
+- 新增平台适配模块 `utils/platform-random.js`（Android SecureRandom via Native.js）、`utils/platform-file.js`（Android SAF 文件 IO，逐字节读写）。
+- `pages/backup/backup.vue` 为**最小真机验证页**（非正式 UI）：固定测试密码、演示账户 `JBSWY3DPEHPK3PXP`、导出硬编码 `testAccount()` 不读真实存储。已真机验证：加密往返、SAF 写入读回、正确密码恢复解密、合并写回存储、home onShow 重载。
+- **未完成**：正式备份 UI（用户输入密码、恢复预览、合并确认、备份状态）、导出读真实账户、错误密码拒绝/取消/原账户不变的真机收尾。
+- 技术取舍见 `.ai/decisions/2026-10-26-encrypted-backup.md`；SAF 故障过程与结论见 `.ai/plans/2026-10-26-saf-write-0kb-issue.md`。
+
 ## 产品方向
 
 1. 先保证扫码、解析、计算和刷新链路正确且可测试。
