@@ -1,7 +1,7 @@
 <template>
-  <view class="ui-page home-page">
+  <view class="ui-page home-page" :style="themeStyle">
     <AppHeader title="Auth" subtitle="你的账户，随时就绪。" brand>
-      <button class="ui-icon-button" aria-label="打开设置" hover-class="ui-tap" @click="openSettings"><AppIcon name="settings" :size="20" /></button>
+      <view class="header-actions"><button class="ui-icon-button" aria-label="切换背景" hover-class="ui-tap" @click="openThemePicker"><AppIcon name="palette" :size="20" /></button><button class="ui-icon-button" aria-label="打开设置" hover-class="ui-tap" @click="openSettings"><AppIcon name="settings" :size="20" /></button></view>
     </AppHeader>
     <view class="ui-content home-content">
       <view v-if="accounts.length || keyword" class="search-box">
@@ -50,6 +50,7 @@
       </template>
       <text v-else-if="dialog" class="dialog-copy">{{ dialog.description }}</text>
     </AppDialog>
+    <ThemePicker :open="themePickerOpen" :selected="themeId" :error="themeError" @close="themePickerOpen = false" @select="selectTheme" />
     <AppToast ref="notice" />
     <BusyOverlay :open="imageBusy" :title="imageBusyTitle" :description="imageBusyDescription" icon="image" />
   </view>
@@ -64,6 +65,8 @@ import AppDialog from '@/components/AppDialog.vue';
 import AppToast from '@/components/AppToast.vue';
 import BusyOverlay from '@/components/BusyOverlay.vue';
 import AccountNameEditor from '@/components/AccountNameEditor.vue';
+import ThemePicker from '@/components/ThemePicker.vue';
+import { getThemeStyle, readTheme, saveTheme } from '@/utils/theme.js';
 import { scanSystemImage, supportsSystemImageScan } from '@/utils/platform-image.js';
 import { waitForFeedback } from '@/utils/feedback-render.js';
 import { parseOtpAuthUri } from '@/utils/otpauth.js';
@@ -71,29 +74,32 @@ import { normalizeAccount, renameAccount, validateAccountNames } from '@/utils/a
 import { readBackupSummary } from '@/utils/backup-summary.js';
 
 export default {
-  components: { AccountItem, AppHeader, AppIcon, ActionSheet, AppDialog, AppToast, BusyOverlay, AccountNameEditor },
+  components: { AccountItem, AppHeader, AppIcon, ActionSheet, AppDialog, AppToast, BusyOverlay, AccountNameEditor, ThemePicker },
   data() {
     return {
       now: Math.floor(Date.now() / 1000), timer: null, keyword: '', accounts: [],
       loading: true, loadError: '', pageVisible: false, addSheetOpen: false, menuAccountId: null,
       dialog: null,
       editDraft: null, editError: '',
+      themeId: readTheme(), themePickerOpen: false, themeError: '',
       imageImportAvailable: false, imageBusy: false, imageStage: 'pick', imageOperation: 0, homeDisposed: false,
       backupSummary: { state: 'unavailable', title: '备份状态暂不可用' },
     };
   },
   onShow() {
+    this.themeId = readTheme();
     this.imageImportAvailable = supportsSystemImageScan();
     this.pageVisible = true;
     this.now = Math.floor(Date.now() / 1000);
     this.loadAccounts();
     this.startClock();
   },
-  onHide() { this.pageVisible = false; this.stopClock(); this.addSheetOpen = false; this.menuAccountId = null; this.dialog = null; this.closeNameEditor(); this.$refs.notice?.clear(); },
+  onHide() { this.pageVisible = false; this.stopClock(); this.addSheetOpen = false; this.menuAccountId = null; this.dialog = null; this.themePickerOpen = false; this.closeNameEditor(); this.$refs.notice?.clear(); },
   onUnload() { this.pageVisible = false; this.stopClock(); this.invalidateImageImport(); },
   beforeUnmount() { this.pageVisible = false; this.stopClock(); this.invalidateImageImport(); },
   onBackPress() {
     if (this.imageBusy) return true;
+    if (this.themePickerOpen) { this.themePickerOpen = false; return true; }
     if (this.editDraft) { this.closeNameEditor(); return true; }
     if (this.dialog) { this.dialog = null; return true; }
     if (this.menuAccountId !== null) { this.menuAccountId = null; return true; }
@@ -105,6 +111,7 @@ export default {
     accounts() { this.backupSummary = readBackupSummary(this.accounts); },
   },
   computed: {
+    themeStyle() { return getThemeStyle(this.themeId); },
     addActions() {
       const actions = [{ value: 'scan', label: '扫描二维码', icon: 'scan' }];
       if (this.imageImportAvailable) actions.push({ value: 'image', label: '从相册识别', icon: 'image' });
@@ -137,6 +144,19 @@ export default {
     },
   },
   methods: {
+    openThemePicker() {
+      if (this.imageBusy) return;
+      this.$refs.notice?.clear();
+      this.themeError = '';
+      this.themePickerOpen = true;
+    },
+    selectTheme(id) {
+      if (id === this.themeId) { this.themePickerOpen = false; return; }
+      if (!saveTheme(id)) { this.themeError = '背景偏好保存失败，请重试。'; return; }
+      this.themeId = id;
+      this.themeError = '';
+      this.themePickerOpen = false;
+    },
     openNameEditor(accountId) {
       if (this.loadError || this.imageBusy) return;
       const account = this.accounts.find(item => item.id === accountId);
@@ -353,15 +373,16 @@ export default {
 </script>
 
 <style scoped>
+.header-actions { display: flex; align-items: center; margin-left: 10px; }.header-actions .ui-icon-button + .ui-icon-button { margin-left: 8px; }
 .home-content { padding-bottom: 110px; padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
-.search-box { display: flex; align-items: center; height: 46px; padding: 0 13px; background: #fff; border: 1px solid var(--auth-line); border-radius: 14px; }
+.search-box { display: flex; align-items: center; height: 46px; padding: 0 13px; background: var(--auth-surface); border: 1px solid var(--auth-line); border-radius: 14px; }
 .search-input { flex: 1; min-width: 0; height: 44px; margin-left: 10px; font-size: 13px; }
 .clear-search { display: flex; align-items: center; justify-content: center; width: 36px; height: 40px; margin: 0 -8px 0 0; padding: 0; background: transparent; }
 .backup-notice { display: flex; align-items: center; width: 100%; min-height: 36px; margin: 12px 0 0; padding: 9px 11px; background: #f1eedc; border-radius: 11px; font-size: 11px; line-height: 1.6; text-align: left; color: #6e684a; }
 .backup-notice text { flex: 1; margin: 0 7px; }
 .group-heading { display: flex; align-items: center; margin: 20px 3px 10px; font-size: 12px; color: var(--auth-muted); }
 .group-heading text { margin-left: 5px; }
-.group-heading .group-count { flex: 1; text-align: right; font-size: 11px; color: #959c8c; }
+.group-heading .group-count { flex: 1; text-align: right; font-size: 11px; color: var(--auth-muted); }
 .result-label { display: block; margin: 18px 3px 12px; font-size: 12px; color: var(--auth-muted); }
 .add-account { position: fixed; z-index: 20; right: 18px; bottom: 24px; bottom: calc(24px + env(safe-area-inset-bottom)); display: flex; align-items: center; height: 50px; margin: 0; padding: 0 17px; background: var(--auth-ink); color: #fff; border-radius: 17px; box-shadow: 0 5px 14px rgba(37,40,36,.12); font-size: 14px; line-height: 1; }
 .add-account text { margin-left: 7px; }
@@ -370,15 +391,15 @@ export default {
 .empty-title { display: block; font-size: 22px; line-height: 1.5; font-weight: 700; }
 .empty-description { display: block; margin-top: 12px; font-size: 13px; line-height: 1.9; color: var(--auth-muted); white-space: pre-line; }
 .empty-action { width: 180px; margin: 26px auto 0; }
-.restore-link { display: block; margin: 15px auto 0; padding: 9px; background: transparent; color: #7c856f; font-size: 13px; line-height: 1.7; }
+.restore-link { display: block; margin: 15px auto 0; padding: 9px; background: transparent; color: var(--auth-muted); font-size: 13px; line-height: 1.7; }
 .image-link { display: flex; align-items: center; justify-content: center; margin-top: 12px; }.image-link text { margin-left: 7px; }
-.privacy-note { display: flex; align-items: center; justify-content: center; margin-top: 38px; color: #939b88; font-size: 11px; }
+.privacy-note { display: flex; align-items: center; justify-content: center; margin-top: 38px; color: var(--auth-muted); font-size: 11px; }
 .privacy-note text { margin-left: 5px; }
 .search-empty { display: flex; align-items: center; flex-direction: column; padding-top: 70px; text-align: center; }
 .small-title { margin-top: 22px; font-size: 18px; }
 .error-state { padding-top: 65px; }
 .loading-tip { padding-top: 50px; text-align: center; color: var(--auth-muted); font-size: 13px; }
-.delete-identity { padding: 13px 14px; margin-bottom: 14px; background: #f0f0e8; border-radius: 13px; }
+.delete-identity { padding: 13px 14px; margin-bottom: 14px; background: var(--auth-secondary); border-radius: 13px; }
 .delete-service { display: block; font-size: 14px; font-weight: 600; line-height: 1.7; overflow-wrap: anywhere; }
 .delete-name { display: block; margin-top: 4px; font-size: 12px; color: var(--auth-muted); line-height: 1.7; overflow-wrap: anywhere; }
 .dialog-copy { display: block; color: var(--auth-muted); font-size: 13px; line-height: 1.9; }

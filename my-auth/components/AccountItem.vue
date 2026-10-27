@@ -82,13 +82,13 @@ function onCopyCode() {
 </script>
 
 <style scoped>
-.account-card { padding: 16px 15px 14px; margin-bottom: 11px; background: #fff; border: 1px solid var(--auth-line); border-radius: 20px; }
-.account-card.is-pinned { background: var(--auth-purple); border-color: #ded7f0; }
+.account-card { padding: 16px 15px 14px; margin-bottom: 11px; background: var(--auth-surface); border: 1px solid var(--auth-line); border-radius: 20px; }
+.account-card.is-pinned { background: var(--auth-purple); border-color: var(--auth-accent-line); }
 .account-heading { display: flex; align-items: center; }
 .account-identity { flex: 1; min-width: 0; margin-left: 10px; }
 .service-name { display: block; font-size: 15px; line-height: 1.45; font-weight: 700; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .account-name { display: block; font-size: 12px; line-height: 1.6; color: var(--auth-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin-top: 2px; }
-.is-pinned .account-name { color: #7b718e; }
+.is-pinned .account-name { color: var(--auth-muted); }
 .more-button { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; min-width: 44px; margin: 0 -9px 0 0; padding: 0; border-radius: 12px; background: transparent; }
 .account-body { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
 .code-button { display: flex; align-items: center; min-height: 44px; padding: 0; margin: 0; background: transparent; line-height: 1.2; border-radius: 8px; }
@@ -97,14 +97,14 @@ function onCopyCode() {
 .code-button .app-icon { opacity: .45; }
 .code-button text { margin-right: 10px; }
 .unavailable-code { font-size: 15px; color: var(--auth-danger); }
-.countdown { display: flex; align-items: center; flex-shrink: 0; font-size: 11px; color: #7d8376; }
+.countdown { display: flex; align-items: center; flex-shrink: 0; font-size: 11px; color: var(--auth-muted); }
 .countdown text { margin-left: 5px; }
-.is-pinned .countdown { color: #7e718d; }
+.is-pinned .countdown { color: var(--auth-muted); }
 .countdown.is-urgent { color: #ad7040; }
-.timer-ring { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 1px solid #d9ded0; border-radius: 50%; }
-.timer-center { width: 16px; height: 16px; background: #fff; border-radius: 50%; }
+.timer-ring { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 1px solid var(--auth-line); border-radius: 50%; }
+.timer-center { width: 16px; height: 16px; background: var(--auth-surface); border-radius: 50%; }
 .is-pinned .timer-center { background: var(--auth-purple); }
-.pin-note { display: flex; align-items: center; margin-top: 7px; color: #92819f; font-size: 10px; }
+.pin-note { display: flex; align-items: center; margin-top: 7px; color: var(--auth-muted); font-size: 10px; }
 .pin-note text { margin-left: 4px; }
 @media (max-width: 350px) { .account-code { font-size: 27px; } .account-code.eight-digits { font-size: 23px; } .code-button text { margin-right: 6px; } }
 </style>

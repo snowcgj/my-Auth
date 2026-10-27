@@ -1,5 +1,5 @@
 <template>
-  <view class="ui-page">
+  <view class="ui-page" :style="themeStyle">
     <AppHeader title="设置" back @back="goBack" />
     <view class="ui-content">
       <view class="identity-panel"><image class="identity-image" src="/static/ui/brand.png" mode="aspectFit" /><view><text class="identity-title">Auth</text><text class="identity-description">验证码在手，登录更从容。</text></view></view>
@@ -30,6 +30,9 @@ import AppIcon from '@/components/AppIcon.vue';
 import AppDialog from '@/components/AppDialog.vue';
 import AppToast from '@/components/AppToast.vue';
 import { readBackupSummary } from '@/utils/backup-summary.js';
+import { getThemeStyle, readTheme } from '@/utils/theme.js';
+const themeId = ref(readTheme());
+const themeStyle = computed(() => getThemeStyle(themeId.value));
 const backupSummary=ref({ title:'正在读取备份状态…' });
 const version=ref('1.0.0');
 const dialogKind = ref('');
@@ -50,6 +53,7 @@ onBackPress(() => {
   return true;
 });
 onShow(()=>{
+  themeId.value = readTheme();
   backupSummary.value=readBackupSummary();
   try {
     if(typeof uni.getAppBaseInfo==='function') version.value=uni.getAppBaseInfo().appVersion || '1.0.0';
@@ -63,19 +67,19 @@ function showPrivacy(){ notice.value?.clear(); dialogKind.value = 'privacy'; }
 </script>
 
 <style scoped>
-.identity-panel { display:flex;align-items:center;padding:22px 20px;background:var(--auth-purple);border:1px solid #ded7f0;border-radius:22px; }
+.identity-panel { display:flex;align-items:center;padding:22px 20px;background:var(--auth-purple);border:1px solid var(--auth-accent-line);border-radius:22px; }
 .identity-image { width:48px;height:50px;margin-right:16px; }
 .identity-title { display:block;font-family:Arial,sans-serif;font-size:26px;font-weight:800; }
-.identity-description { display:block;margin-top:7px;font-size:12px;color:#7b718e;line-height:1.7; }
-.settings-group { background:#fff;border:1px solid var(--auth-line);border-radius:19px;padding:0 15px; }
+.identity-description { display:block;margin-top:7px;font-size:12px;color:var(--auth-muted);line-height:1.7; }
+.settings-group { background:var(--auth-surface);border:1px solid var(--auth-line);border-radius:19px;padding:0 15px; }
 .settings-row { display:flex;align-items:center;width:100%;min-height:82px;padding:15px 0;margin:0;background:transparent;border-radius:0;text-align:left;line-height:1.5; }
-.settings-row + .settings-row { border-top:1px solid #eef0e7; }
-.row-icon { display:flex;align-items:center;justify-content:center;width:38px;height:38px;flex-shrink:0;background:#f0f2e9;border-radius:12px; }
-.purple-icon { background:#eee8fa; }
+.settings-row + .settings-row { border-top:1px solid var(--auth-line); }
+.row-icon { display:flex;align-items:center;justify-content:center;width:38px;height:38px;flex-shrink:0;background:var(--auth-secondary);border-radius:12px; }
+.purple-icon { background:var(--auth-purple); }
 .row-content { flex:1;min-width:0;margin:0 12px; }
 .row-title { display:block;font-size:14px;font-weight:500; }
 .row-description { display:block;font-size:11px;color:var(--auth-muted);margin-top:5px;line-height:1.6; }
-.version-note { display:flex;align-items:center;flex-direction:column;margin:34px 0 10px;font-size:11px;color:#929a86; }
+.version-note { display:flex;align-items:center;flex-direction:column;margin:34px 0 10px;font-size:11px;color:var(--auth-muted); }
 .version-note text + text { margin-top:8px; }
 .explanation-section + .explanation-section { margin-top: 17px; }
 .explanation-title { display: block; font-size: 13px; font-weight: 600; line-height: 1.7; }

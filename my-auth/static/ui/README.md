@@ -5,6 +5,7 @@
 - 通用图标：48 × 48 PNG，`-light` 为浅色版本。
 - `image`/`image-light` 为系统选图入口新增的同风格图标，保留 SVG 源文件。
 - `edit`/`edit-light` 为名称编辑新增的铅笔图标，保留 SVG 源文件。
+- `palette`/`palette-light` 为浅色背景入口新增的调色板图标，保留 SVG 源文件。
 - 应用标识与服务标识：96 × 96 PNG。
 - 空状态插画：480 × 440 PNG。
 - 同名 SVG 为可编辑源文件；页面使用 PNG，避免不同运行端的 SVG 展示差异。

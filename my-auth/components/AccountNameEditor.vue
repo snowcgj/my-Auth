@@ -36,17 +36,17 @@ const canSave = computed(() => checked.value.valid && (checked.value.app !== pro
 
 <style scoped>
 .editor-layer { position: fixed; inset: 0; z-index: 105; display: flex; align-items: flex-end; }
-.editor-backdrop { position: absolute; inset: 0; background: rgba(37,40,36,.3); }
-.editor-panel { position: relative; width: 100%; max-height: 88vh; overflow-y: auto; padding: 10px 22px 24px; padding-bottom: calc(24px + env(safe-area-inset-bottom)); border-radius: 27px 27px 0 0; background: #fbfbf6; }
-.editor-handle { width: 34px; height: 4px; margin: 0 auto 23px; border-radius: 4px; background: #daddd1; }
+.editor-backdrop { position: absolute; inset: 0; background: var(--auth-mask); }
+.editor-panel { position: relative; width: 100%; max-height: 88vh; overflow-y: auto; padding: 10px 22px 24px; padding-bottom: calc(24px + env(safe-area-inset-bottom)); border-radius: 27px 27px 0 0; background: var(--auth-raised); }
+.editor-handle { width: 34px; height: 4px; margin: 0 auto 23px; border-radius: 4px; background: var(--auth-handle); }
 .editor-heading { display: flex; align-items: center; margin-bottom: 23px; }
 .editor-icon { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin-right: 12px; border-radius: 15px; background: var(--auth-purple); }
 .editor-title { display: block; font-size: 21px; font-weight: 700; line-height: 1.5; }
 .editor-subtitle { display: block; margin-top: 4px; font-size: 12px; line-height: 1.7; color: var(--auth-muted); }
-.editor-label { display: block; margin: 17px 0 9px; font-size: 12px; color: #6e7663; }
+.editor-label { display: block; margin: 17px 0 9px; font-size: 12px; color: var(--auth-muted); }
 .input-invalid { border-color: #c9a095; }
 .field-error { display: block; margin-top: 6px; font-size: 11px; color: var(--auth-danger); }
-.editor-note { display: block; margin-top: 17px; color: #919985; font-size: 11px; line-height: 1.8; }
-.save-error { display: block; margin-top: 13px; padding: 10px 12px; color: var(--auth-danger); font-size: 12px; line-height: 1.8; background: #f6e8e2; border-radius: 11px; }
+.editor-note { display: block; margin-top: 17px; color: var(--auth-muted); font-size: 11px; line-height: 1.8; }
+.save-error { display: block; margin-top: 13px; padding: 10px 12px; color: var(--auth-danger); font-size: 12px; line-height: 1.8; background: var(--auth-danger-soft); border-radius: 11px; }
 .editor-actions { display: flex; margin-top: 22px; }.editor-button { flex: 1; min-width: 0; }.editor-button + .editor-button { margin-left: 10px; }
 </style>

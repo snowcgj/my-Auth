@@ -15,12 +15,14 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 
 ## 3. 当前状态
 
+**最新批次：背景主题与 README（阶段存档）**：基于 23d7a06 实现首页调色板入口、暖白/雾紫/浅绿配色，三页和页面内弹层统一；独立 ui-theme 偏好，保存失败不切换，不触碰账户与备份。126 项测试（新增 theme 4 项）、14 个 SFC 检查、93 项模拟浏览器交互检查通过。README 已重写，3 张图为公开演示浏览器截图；README.draft 与 theme-prep 保留。Android 重启恢复、短屏与原生暖白露底待验；许可证未决定，未打包或发布。用户已授权本轮本地提交，不推送；提交号见 git log。见 .ai/plans/2026-10-27-background-themes.md 和对应 decisions。
+
 **当前批次：展示名称编辑（阶段存档）**：用户授权实现“只修改服务名和账户名”，暂不做手动添加，不安排 APK 打包。基于已提交的 44b5048（SHA2 与系统选图，用户反馈测试可用）增加编辑面板；只改 app/name，保留原始标识/密钥/配置，失败保留草稿。名称纳入 v2 备份指纹，旧记录提示重新备份一次，不改备份文件格式或恢复去重规则。122 项测试、13 个 SFC 检查、58 项模拟浏览器交互检查通过，Android 键盘与新流程待验。详见 .ai/plans/2026-10-27-account-names.md 与对应 decisions。用户已授权本轮本地提交，不推送；提交号见 git log。
 
 下列早期记录保留当时背景，验收状态以本段及对应计划最新记录为准。
 
 - **最新提交**：见 `git log --oneline -3`（本轮实现基线为 44b5048）
-- **测试**：在内层应用目录运行 `npm test` → **122 项通过**（totp-core 27 + otpauth 11 + account 11 + backup-merge 23 + backup-crypto 31 + platform-io 16 + backup-summary 3），约 87 秒。新增平台测试模拟 Java/Activity，不替代真机。
+- **测试**：在内层应用目录运行 `npm test` → **126 项通过**（totp-core 27 + otpauth 11 + account 11 + backup-merge 23 + backup-crypto 31 + platform-io 16 + backup-summary 3 + theme 4），约 79 秒。新增平台测试模拟 Java/Activity，不替代真机。
 - **已完成**：
   - **统一弹窗与等待反馈（2026-10-27，本地验证完成、真机待验）**：AppDialog/AppToast/BusyOverlay，删除确认与设置说明/隐私不再用系统弹窗，复制提示统一；备份先提交反馈并让出短任务再同步计算，finally 释放 busy、卸载后令牌失效。73 项测试、12 个 SFC 检查、27 项 DOM 检查、8 组模拟备份场景通过。实际加载动画/SAF 返回需真机复验，未迁移线程；见 `.ai/plans/2026-10-27-feedback-ui.md`。
   - **视觉与导航改版（2026-10-27，代码完成、真机待验）**：用户确认原型后接入暖白/淡紫首页、服务图标、底部操作面板、设置与备份分步界面；移除 Tab，保留三页注册，使用 navigateTo/navigateBack。首页 onShow 启动时钟并重载，onHide/onUnload 停止。核心算法、备份协议、SAF 不变。73 项测试与 Vue SFC 检查通过；浏览器交互检查为模拟 uni API，不能替代 Android。下一步先按 `.ai/plans/2026-10-27-ui-refresh.md` 真机验收。
@@ -89,7 +91,7 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 
 1. 读：`AGENTS.md` → `.ai/project.md` → `.ai/architecture.md` → `.ai/conventions.md` → `.ai/security.md`。
 2. 读加密备份相关：`.ai/plans/2026-10-26-encrypted-backup.md`（设计+进度）→ `.ai/decisions/2026-10-26-encrypted-backup.md`（技术取舍）→ `.ai/plans/2026-10-26-saf-write-0kb-issue.md`（SAF 故障过程与结论）。
-3. 在内层应用目录运行 `npm test` 确认当前 122 项基线通过（约 87 秒）。
+3. 在内层应用目录运行 `npm test` 确认当前 126 项基线通过（约 79 秒）。
 4. 用 HBuilderX 打开 `my-auth/`，USB 真机运行确认基线可用。
 5. 与用户对齐本次要做什么，再动代码。
 

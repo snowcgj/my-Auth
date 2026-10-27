@@ -1,4 +1,4 @@
-/* 已确认的首页视觉：暖白、淡紫、近黑。仅展示样式，不参与账户持久化。 */
+/* 已确认的首页视觉：暖白、淡紫、近黑。浅色背景偏好与账户存储隔离。 */
 page {
   --auth-paper: #f7f7f2;
   --auth-ink: #252824;
@@ -6,6 +6,14 @@ page {
   --auth-line: #e7e8df;
   --auth-purple: #e9e4fa;
   --auth-danger: #ad5749;
+  --auth-surface: #fff;
+  --auth-raised: #fbfbf6;
+  --auth-input: #f4f5ef;
+  --auth-secondary: #ecefe4;
+  --auth-handle: #daddd1;
+  --auth-accent-line: #ded7f0;
+  --auth-mask: rgba(37,40,36,.3);
+  --auth-danger-soft: #f6e8e2;
   background: #f7f7f2;
   color: #252824;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
@@ -16,7 +24,7 @@ button::after { border: none; }
 button { font-family: inherit; }
 .ui-page { min-height: 100vh; background: var(--auth-paper); }
 .ui-content { padding: 0 18px 32px; padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
-.ui-panel { background: #fff; border: 1px solid var(--auth-line); border-radius: 20px; padding: 20px; margin-bottom: 14px; }
+.ui-panel { background: var(--auth-surface); border: 1px solid var(--auth-line); border-radius: 20px; padding: 20px; margin-bottom: 14px; }
 .ui-section-label { display: block; font-size: 12px; color: var(--auth-muted); margin: 24px 3px 10px; }
 .ui-title { display: block; font-size: 20px; line-height: 1.5; font-weight: 700; color: var(--auth-ink); }
 .ui-description { display: block; font-size: 13px; line-height: 1.85; color: var(--auth-muted); }
@@ -26,17 +34,17 @@ button { font-family: inherit; }
   margin: 0; font-size: 14px; font-weight: 500; line-height: 1.6;
 }
 .ui-primary { background: var(--auth-ink); color: #fff; }
-.ui-secondary { background: #ecefe4; color: var(--auth-ink); }
+.ui-secondary { background: var(--auth-secondary); color: var(--auth-ink); }
 .ui-primary[disabled], .ui-secondary[disabled] { opacity: .45; color: #fff; background: #777c73; }
 .ui-primary .ui-button-label, .ui-secondary .ui-button-label { margin-left: 8px; }
 .ui-icon-button {
   display: flex; align-items: center; justify-content: center;
   width: 44px; height: 44px; min-width: 44px; padding: 0; margin: 0;
-  background: #fff; border: 1px solid var(--auth-line); border-radius: 50%; line-height: 1;
+  background: var(--auth-surface); border: 1px solid var(--auth-line); border-radius: 50%; line-height: 1;
 }
 .ui-input {
   display: block; width: 100%; height: 48px; padding: 0 14px;
-  background: #f4f5ef; border: 1px solid var(--auth-line); border-radius: 13px;
+  background: var(--auth-input); border: 1px solid var(--auth-line); border-radius: 13px;
   font-size: 14px; color: var(--auth-ink);
 }
 .ui-input-placeholder { color: #969c8e; }

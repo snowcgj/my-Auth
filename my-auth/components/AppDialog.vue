@@ -32,10 +32,10 @@ defineEmits(['confirm', 'cancel']);
 
 <style scoped>
 .dialog-layer { position: fixed; inset: 0; z-index: 110; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.dialog-backdrop { position: absolute; inset: 0; background: rgba(37,40,36,.34); }
-.dialog-panel { position: relative; width: 100%; max-width: 360px; max-height: 85vh; padding: 24px; border: 1px solid #eeeee5; border-radius: 26px; background: #fbfbf6; box-shadow: 0 16px 55px rgba(37,40,36,.12); }
+.dialog-backdrop { position: absolute; inset: 0; background: var(--auth-mask); }
+.dialog-panel { position: relative; width: 100%; max-width: 360px; max-height: 85vh; padding: 24px; border: 1px solid var(--auth-line); border-radius: 26px; background: var(--auth-raised); box-shadow: 0 16px 55px rgba(37,40,36,.12); }
 .dialog-symbol { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; margin-bottom: 17px; background: var(--auth-purple); border-radius: 16px; }
-.dialog-symbol.is-danger { background: #f3e4dd; }
+.dialog-symbol.is-danger { background: var(--auth-danger-soft); }
 .dialog-title { display: block; font-size: 21px; font-weight: 700; line-height: 1.5; }
 .dialog-content { max-height: 43vh; margin-top: 13px; }
 .dialog-description { display: block; color: var(--auth-muted); font-size: 13px; line-height: 1.9; white-space: pre-line; overflow-wrap: anywhere; }

@@ -1,5 +1,5 @@
 <template>
-  <view class="ui-page backup-page">
+  <view class="ui-page backup-page" :style="themeStyle">
     <AppHeader :title="pageTitle" :subtitle="activePanel === 'overview' ? '为账户留一份退路。' : ''" back :disabled="busy" @back="goBack" />
     <view class="ui-content">
       <template v-if="activePanel === 'overview'">
@@ -47,6 +47,7 @@ import AppHeader from '@/components/AppHeader.vue';
 import AppIcon from '@/components/AppIcon.vue';
 import BusyOverlay from '@/components/BusyOverlay.vue';
 import { waitForFeedback } from '@/utils/feedback-render.js';
+import { getThemeStyle, readTheme } from '@/utils/theme.js';
 
 import { createBackup, openBackup, BackupError } from '@/utils/backup-crypto.js';
 import { mergeAccounts, buildAccountFingerprint, getBackupChangeState } from '@/utils/backup-merge.js';
@@ -72,6 +73,7 @@ export default {
   components: { AppHeader, AppIcon, BusyOverlay },
   data() {
     return {
+      themeId: readTheme(),
       activePanel: 'overview',
       busy: false,
       busyKind: '', // 'export' | 'save' | 'read' | 'decrypt' | 'merge'
@@ -111,6 +113,7 @@ export default {
     this.restoreFileContent = '';
   },
   computed: {
+    themeStyle() { return getThemeStyle(this.themeId); },
     pageTitle() { return this.activePanel === 'export' ? '创建加密备份' : this.activePanel === 'restore' ? '恢复账户' : '备份与恢复'; },
     busyTitle() {
       return { export: '正在加密备份', save: '等待保存与校验', read: '选择并读取备份', decrypt: '正在解密备份', merge: '正在恢复账户' }[this.busyKind] || '正在处理';
@@ -123,6 +126,7 @@ export default {
     },
   },
   onShow() {
+    this.themeId = readTheme();
     // 页面重新显示或从系统文件选择器返回时刷新备份状态。
     this.refreshBackupStatus();
   },
@@ -407,24 +411,24 @@ export default {
 .hero-copy { flex:1;min-width:0; }
 .hero-copy .ui-title { font-size:21px; }
 .hero-copy .ui-description { margin-top:9px;white-space:pre-line;font-size:12px; }
-.status-card { padding:18px 19px;background:var(--auth-purple);border:1px solid #ded7f0;border-radius:19px;margin-bottom:20px; }
+.status-card { padding:18px 19px;background:var(--auth-purple);border:1px solid var(--auth-accent-line);border-radius:19px;margin-bottom:20px; }
 .status-changed { background:#f5efdb;border-color:#ebe3c8; }
-.status-label { display:flex;align-items:center;font-size:11px;color:#81748f;margin-bottom:12px; }
+.status-label { display:flex;align-items:center;font-size:11px;color:var(--auth-muted);margin-bottom:12px; }
 .status-label text { margin-left:6px; }
 .status-title { display:block;font-size:16px;line-height:1.65;font-weight:600; }
-.status-detail { display:block;margin-top:7px;color:#81788a;font-size:11px;line-height:1.8; }
+.status-detail { display:block;margin-top:7px;color:var(--auth-muted);font-size:11px;line-height:1.8; }
 .status-changed .status-detail,.status-changed .status-label { color:#8c7b53; }
-.backup-actions { background:#fff;border:1px solid var(--auth-line);border-radius:20px;padding:0 16px; }
+.backup-actions { background:var(--auth-surface);border:1px solid var(--auth-line);border-radius:20px;padding:0 16px; }
 .backup-entry { display:flex;align-items:center;width:100%;min-height:92px;margin:0;padding:17px 0;background:transparent;text-align:left;line-height:1.5;border-radius:0; }
 .backup-entry + .backup-entry { border-top:1px solid var(--auth-line); }
 .entry-icon { display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:14px;flex-shrink:0; }
-.entry-icon.purple { background:#eee8fa; }.entry-icon.yellow { background:#f7edbd; }
+.entry-icon.purple { background:var(--auth-purple); }.entry-icon.yellow { background:#f7edbd; }
 .entry-copy { flex:1;min-width:0;margin:0 12px; }.entry-title { display:block;font-size:15px;font-weight:600; }.entry-description { display:block;font-size:11px;color:var(--auth-muted);margin-top:6px;line-height:1.8; }
-.privacy-description { display:block;margin:22px 8px 0;text-align:center;font-size:11px;color:#8f9881;line-height:1.9; }
-.form-description { margin-top:10px;margin-bottom:20px; }.field-label { display:block;margin:18px 0 9px;font-size:12px;color:#6e7663; }
+.privacy-description { display:block;margin:22px 8px 0;text-align:center;font-size:11px;color:var(--auth-muted);line-height:1.9; }
+.form-description { margin-top:10px;margin-bottom:20px; }.field-label { display:block;margin:18px 0 9px;font-size:12px;color:var(--auth-muted); }
 .password-note { margin-top:18px; }.form-submit { width:100%;margin-top:22px; }.file-note { display:block;font-size:11px;line-height:1.8;color:var(--auth-muted);margin-top:14px; }
-.merge-counts { display:flex;justify-content:space-around;padding:19px 10px;margin-bottom:12px;background:#f0edf8;border-radius:14px;text-align:center; }.count-number { display:block;font-family:Consolas,monospace;font-size:28px;font-weight:700; }.count-label { display:block;font-size:11px;margin-top:5px;color:#81758e; }.muted-count { color:#92899e; }
+.merge-counts { display:flex;justify-content:space-around;padding:19px 10px;margin-bottom:12px;background:var(--auth-purple);border-radius:14px;text-align:center; }.count-number { display:block;font-family:Consolas,monospace;font-size:28px;font-weight:700; }.count-label { display:block;font-size:11px;margin-top:5px;color:var(--auth-muted); }.muted-count { color:var(--auth-muted); }
 .preview-account { padding:13px 0;border-bottom:1px solid var(--auth-line); }.preview-service { display:block;font-size:13px;font-weight:500;overflow-wrap:anywhere; }.preview-name { display:block;font-size:11px;color:var(--auth-muted);margin-top:5px;overflow-wrap:anywhere; }.cancel-restore { margin-top:10px; }
-.operation-message { padding:14px 16px;margin-top:16px;background:#ecefe5;border-radius:14px;font-size:12px;line-height:1.9;color:#67735b;overflow-wrap:anywhere; }.operation-message.ok { background:#e6eedf;color:#4c6745; }.operation-message.error { background:#f6e8e2;color:#9b5946; }
+.operation-message { padding:14px 16px;margin-top:16px;background:#ecefe5;border-radius:14px;font-size:12px;line-height:1.9;color:#67735b;overflow-wrap:anywhere; }.operation-message.ok { background:#e6eedf;color:#4c6745; }.operation-message.error { background:var(--auth-danger-soft);color:#9b5946; }
 @media(max-width:350px){ .backup-art{width:90px;height:106px;margin-right:10px}.hero-copy .ui-title{font-size:19px} }
 </style>
