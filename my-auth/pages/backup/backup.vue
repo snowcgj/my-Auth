@@ -1,229 +1,434 @@
 <template>
   <view class="backup-container">
-    <text class="title">加密备份最小真机验证</text>
-    <text class="desc">仅用公开演示数据 JBSWY3DPEHPK3PXP。验证：①安全随机源 ②SAF 文件 IO（ACTION_CREATE/OPEN_DOCUMENT）③加密往返 ④错密码拒绝 ⑤取消不报成功 ⑥中文/重复文件名 ⑦合并恢复写回存储。按钮 0-3、查看账户数不碰存储；按钮 4 会写回 accounts（恢复合并 skip 策略，先持久化成功再提示）。</text>
+    <text class="title">备份与恢复</text>
 
-    <button @click="onMinWrite" class="btn ghost">0. 最小写入诊断（写几字节，定位 write 链路）</button>
-    <button @click="onExport" class="btn primary">1. 导出测试（系统另存为）</button>
-    <button @click="onRestoreCorrect" class="btn primary">2. 恢复测试（正确密码）</button>
-    <button @click="onRestoreWrong" class="btn primary">3. 恢复测试（错误密码）</button>
-    <button @click="onRestoreWriteBack" class="btn danger">4. 恢复并写回存储（正确密码，会修改账户存储）</button>
-    <button @click="onCheckAccounts" class="btn ghost">查看当前账户数</button>
-    <button @click="onClear" class="btn ghost">清空日志</button>
-
-    <text v-if="results.length" class="section-title">结果</text>
-    <view class="result-list">
-      <text v-for="(r, i) in results" :key="i" class="result-line">{{ r }}</text>
+    <!-- 备份状态 -->
+    <view class="section" v-if="backupStatus">
+      <text class="section-title">备份状态</text>
+      <view v-if="backupStatus.available">
+        <text class="info">最近导出：{{ backupStatus.lastExportAt }}</text>
+        <text class="info">导出账户数：{{ backupStatus.exportedCount }}</text>
+        <text :class="backupStatus.changed ? 'warning' : 'info'">
+          {{ backupStatus.changed ? '导出后有未备份的变更' : '账户与上次导出一致' }}
+        </text>
+      </view>
+      <text v-else class="info">{{ backupStatus.error || '尚未创建备份' }}</text>
     </view>
+
+    <!-- 创建备份 -->
+    <view class="section">
+      <text class="section-title">创建备份</text>
+      <text class="desc">将当前账户加密导出为 .mabak 文件。仅本机存储，不上传任何服务器。</text>
+      <input
+        :value="exportPassword"
+        @input="onExportPasswordInput"
+        password
+        placeholder="设置备份密码"
+        class="input"
+        :disabled="busy"
+      />
+      <input
+        :value="exportPasswordConfirm"
+        @input="onExportPasswordConfirmInput"
+        password
+        placeholder="再次输入密码"
+        class="input"
+        :disabled="busy"
+      />
+      <text class="warning">密码无法找回，遗忘将无法恢复备份</text>
+      <button @click="onCreateBackup" :disabled="busy" class="btn primary">
+        {{ busy && busyKind === 'export' ? '处理中…' : '创建备份' }}
+      </button>
+    </view>
+
+    <!-- 恢复 -->
+    <view class="section">
+      <text class="section-title">恢复账户</text>
+      <text class="desc">从 .mabak 文件恢复账户，重复账户默认跳过（保留现有）。</text>
+      <button @click="onSelectFile" :disabled="busy" class="btn primary">
+        {{ restoreStep === 'idle' ? '选择备份文件' : '重新选择文件' }}
+      </button>
+      <view v-if="restoreStep === 'fileSelected' || restoreStep === 'previewed'">
+        <text class="info">已读取 {{ restoreFileBytes }} 字节</text>
+        <input
+          :value="restorePassword"
+          @input="onRestorePasswordInput"
+          password
+          placeholder="输入备份密码"
+          class="input"
+          :disabled="busy"
+        />
+        <button @click="onDecryptPreview" :disabled="busy" class="btn primary">
+          {{ busy && busyKind === 'decrypt' ? '解密中…' : '解密预览' }}
+        </button>
+      </view>
+      <view v-if="restoreStep === 'previewed' && preview">
+        <text class="info">新增 {{ preview.added }} 个账户，重复 {{ preview.duplicates.length }} 个（将跳过）</text>
+        <button @click="onConfirmMerge" :disabled="busy" class="btn danger">
+          {{ busy && busyKind === 'merge' ? '合并中…' : '确认合并' }}
+        </button>
+        <button @click="onCancelRestore" :disabled="busy" class="btn ghost">取消恢复</button>
+      </view>
+    </view>
+
+    <!-- 状态/消息（不记录密码/账户/完整 URI） -->
+    <text v-if="message" class="message" :class="messageKind">{{ message }}</text>
   </view>
 </template>
 
 <script>
-import { createBackup, openBackup } from '@/utils/backup-crypto.js';
-import { mergeAccounts } from '@/utils/backup-merge.js';
+import { createBackup, openBackup, BackupError } from '@/utils/backup-crypto.js';
+import { mergeAccounts, buildAccountFingerprint } from '@/utils/backup-merge.js';
 import { getRandomBytes } from '@/utils/platform-random.js';
 import { pickFileForSave, pickFileForRead } from '@/utils/platform-file.js';
 
-const PASSWORD = 'correct-horse-battery-staple';
-const TEST_SECRET = 'JBSWY3DPEHPK3PXP';
+const BACKUP_META_KEY = 'backup_meta';
+const MAX_ACCOUNTS = 10000; // 防御：异常大的账户数视为损坏
 
-function testAccount() {
-  return {
-    id: 1,
-    icon: '/static/logo.png',
-    app: 'Acme',
-    name: 'alice',
-    issuer: 'Acme',
-    accountName: 'alice',
-    secret: TEST_SECRET,
-    algorithm: 'SHA1',
-    digits: 6,
-    period: 30,
-    pinned: false,
-    sortOrder: 1,
-    code: '',
-    countdown: 30,
-  };
+function formatTime(iso) {
+  if (!iso) return '未知';
+  try {
+    const d = new Date(iso);
+    const pad = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+      + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  } catch {
+    return '未知';
+  }
 }
 
 export default {
   data() {
     return {
-      results: [],
+      busy: false,
+      busyKind: '', // 'export' | 'decrypt' | 'merge'
+      // 备份状态
+      backupStatus: null, // null=未加载；{ available, lastExportAt, exportedCount, changed, error }
+      // 创建备份
+      exportPassword: '',
+      exportPasswordConfirm: '',
+      // 恢复
+      restoreStep: 'idle', // 'idle' | 'fileSelected' | 'previewed'
+      restoreFileContent: '',
+      restoreFileBytes: 0,
+      restorePassword: '',
+      preview: null, // { added, duplicates, decryptedCount }
+      // 消息
+      message: '',
+      messageKind: '', // '' | 'ok' | 'error'
     };
   },
+  onShow() {
+    // 页面重新显示时刷新备份状态（从其他 tab 切回也会触发）
+    this.refreshBackupStatus();
+  },
   methods: {
-    log(line) {
-      this.results = [...this.results, line];
+    setMessage(text, kind) {
+      this.message = text;
+      this.messageKind = kind || '';
     },
-    onClear() {
-      this.results = [];
+    clearPasswords() {
+      // 操作完成后清除内存中的密码，缩短敏感数据驻留时间
+      this.exportPassword = '';
+      this.exportPasswordConfirm = '';
+      this.restorePassword = '';
     },
-    onMinWrite() {
-      this.log('--- 最小写入诊断开始（写 AB测试123 几字节）---');
+    // 刷新备份状态：读 backup_meta + 计算当前指纹比对。
+    // 读取失败显示"状态不可用"，不伪造"已备份"。
+    refreshBackupStatus() {
+      let meta;
       try {
-        pickFileForSave('test.txt', 'AB测试123', (res) => {
-          if (res.cancelled) { this.log('用户取消'); return; }
-          if (res.error) { this.log('✗ 最小写入失败：' + res.error); return; }
-          this.log('✓ 最小写入成功，' + res.bytes + ' 字节，读回验证 ' + (res.verified ? '✓ 通过' : '✗ 未通过'));
-        });
+        meta = uni.getStorageSync(BACKUP_META_KEY);
       } catch (e) {
-        this.log('✗ onMinWrite 同步异常：' + ((e && e.message) || String(e)));
-      }
-    },
-    onExport() {
-      this.log('--- 导出测试开始 ---');
-      let backup;
-      let t0 = Date.now();
-      try {
-        // 注入 platform-random 的 getRandomBytes：Android 走 SecureRandom，其他走 Web Crypto
-        backup = createBackup(PASSWORD, [testAccount()], { randomBytes: getRandomBytes });
-      } catch (e) {
-        this.log('✗ 加密失败：' + (e.code || '') + ' ' + (e.message || e));
-        this.log('  （若 NO_SECURE_RANDOM：SecureRandom Native.js 桥接未成功，需评估适配）');
+        this.backupStatus = { available: false, error: '状态不可用（读取失败）' };
         return;
       }
-      const encMs = Date.now() - t0;
-      this.log('✓ 加密成功，耗时 ' + encMs + 'ms（含 PBKDF2 十万次 + SecureRandom）');
-
-      const json = JSON.stringify(backup);
-      // 中文文件名：验证系统另存为对中文的处理；重复文件名由系统提示覆盖
-      t0 = Date.now();
-      pickFileForSave('my-auth-验证.mabak', json, (res) => {
-        const ioMs = Date.now() - t0;
-        if (res.cancelled) {
-          this.log('✓ 用户取消另存为，未记录导出（符合预期）');
-          return;
-        }
-        if (res.error) {
-          this.log('✗ 写入失败：' + res.error + '（原账户不变）');
-          return;
-        }
-        this.log('✓ 写入成功，IO ' + ioMs + 'ms');
-        this.log('  写入 ' + (res.bytes || 0) + ' 字节，读回验证 ' + (res.verified ? '✓ 通过' : '✗ 未验证'));
-        this.log('  URI=' + res.uri);
-        this.log('导出总耗时 ' + (encMs + ioMs) + 'ms');
-      });
-    },
-    onRestoreCorrect() {
-      this.log('--- 恢复测试（正确密码）开始 ---');
-      pickFileForRead((res) => {
-        if (res.cancelled) {
-          this.log('用户取消选择文件');
-          return;
-        }
-        if (res.error) {
-          this.log('✗ 读取失败：' + res.error + '（原账户不变）');
-          return;
-        }
-        this.log('选中文件 URI：' + (res.uri || '未知'));
-        this.log('读到 ' + (res.bytes || 0) + ' 字节');
-        if (!res.content || res.content.length === 0) {
-          this.log('✗ 读到 0 字节：选到的文件是空的。请选刚导出的 my-auth-验证.mabak（约 667 字节，在下载/Downloads 目录）');
-          return;
-        }
-        const t0 = Date.now();
-        try {
-          const result = openBackup(PASSWORD, res.content);
-          const ms = Date.now() - t0;
-          const ok = result.accounts[0] && result.accounts[0].secret === TEST_SECRET;
-          this.log(ok ? '✓ 正确密码恢复成功' : '✗ secret 不匹配');
-          this.log('  解密耗时 ' + ms + 'ms，账户数 ' + result.accounts.length);
-        } catch (e) {
-          this.log('✗ 恢复异常：' + (e.code || '') + ' ' + (e.message || e));
-        }
-      });
-    },
-    onRestoreWrong() {
-      this.log('--- 恢复测试（错误密码）开始 ---');
-      pickFileForRead((res) => {
-        if (res.cancelled) {
-          this.log('用户取消选择文件');
-          return;
-        }
-        if (res.error) {
-          this.log('✗ 读取失败：' + res.error + '（原账户不变）');
-          return;
-        }
-        const t0 = Date.now();
-        try {
-          openBackup('wrong-password', res.content);
-          this.log('✗ 错误密码竟恢复成功（应被拒绝）');
-        } catch (e) {
-          const ms = Date.now() - t0;
-          const isPw = e.code === 'PASSWORD_OR_CORRUPT';
-          this.log(isPw ? '✓ 错误密码被拒绝' : '✗ 异常类型不对：' + (e.code || '') + ' ' + (e.message || e));
-          this.log('  拒绝耗时 ' + ms + 'ms（仅 PBKDF2 + 验 MAC，未解密）');
-        }
-      });
-    },
-    onRestoreWriteBack() {
-      // 与按钮 2/3 的区别：本按钮会修改账户存储（写回 accounts）。
-      // 流程：读文件 → 解密 → 重新分配 id（避免与现有冲突）→ 合并(skip) → 先持久化成功再提示。
-      // 复用 home.vue "先 persistAccounts(next) 成功再赋值 this.accounts" 约定。
-      this.log('--- 恢复并写回存储开始（会修改账户存储）---');
-      pickFileForRead((res) => {
-        if (res.cancelled) {
-          this.log('用户取消选择文件，存储未修改');
-          return;
-        }
-        if (res.error) {
-          this.log('✗ 读取失败：' + res.error + '（存储未修改）');
-          return;
-        }
-        this.log('选中文件 URI：' + (res.uri || '未知'));
-        this.log('读到 ' + (res.bytes || 0) + ' 字节');
-        if (!res.content || res.content.length === 0) {
-          this.log('✗ 读到 0 字节，存储未修改');
-          return;
-        }
-        let decrypted;
-        try {
-          const result = openBackup(PASSWORD, res.content);
-          decrypted = result.accounts;
-          this.log('✓ 解密成功，备份含 ' + decrypted.length + ' 个账户');
-        } catch (e) {
-          this.log('✗ 解密失败：' + (e.code || '') + ' ' + (e.message || e) + '，存储未修改');
-          return;
-        }
-        // 重新分配 id：备份里的 id 可能与现有账户冲突（去重键是 secret，不是 id，
-        // secret 不同但 id 相同的账户会进 merged，导致 home v-for :key 冲突）。
-        // 用 Date.now() + 索引确保新 id 唯一。
-        const baseId = Date.now();
-        const reid = decrypted.map((acc, i) => ({ ...acc, id: baseId + i }));
-        // 读现有存储：失败立即终止，不按空数组继续合并——
-        // 否则 mergeAccounts([], reid) 会用恢复数据覆盖原存储，丢失现有账户。
-        let existing;
-        try {
-          const stored = uni.getStorageSync('accounts');
-          existing = Array.isArray(stored) ? stored : [];
-        } catch (e) {
-          this.log('✗ 读取现有账户存储失败：' + (e.message || e) + '，已终止，存储未修改');
-          return;
-        }
-        this.log('现有账户 ' + existing.length + ' 个');
-        // 合并（skip 策略：重复 secret 保留现有，incoming 重复项进 duplicates 清单）
-        const merge = mergeAccounts(existing, reid);
-        this.log('合并结果：新增 ' + merge.added + ' 个，跳过 ' + merge.duplicates.length + ' 个重复');
-        // 先持久化成功再提示（存储失败则不更新内存，存储保持原样）
-        try {
-          uni.setStorageSync('accounts', merge.merged);
-        } catch (e) {
-          this.log('✗ 写回存储失败：' + (e.message || e) + '，存储未修改');
-          return;
-        }
-        this.log('✓ 已写回存储，当前共 ' + merge.merged.length + ' 个账户');
-        this.log('  请切到首页 tab 查看（home onShow 已加重载 accounts）');
-      });
-    },
-    onCheckAccounts() {
-      try {
-        const arr = uni.getStorageSync('accounts');
-        const n = Array.isArray(arr) ? arr.length : 0;
-        this.log('当前账户存储：' + n + ' 个（验证页不修改，操作前后应一致）');
-      } catch (e) {
-        this.log('读取账户存储失败：' + (e.message || e));
+      if (!meta || typeof meta !== 'object' || !meta.lastExportAt) {
+        this.backupStatus = { available: false, error: '尚未创建备份' };
+        return;
       }
+      // 计算当前指纹 vs 导出时指纹，判断是否有变更
+      const read = this.readExistingAccounts();
+      if (!read.ok) {
+        this.backupStatus = { available: false, error: '状态不可用（账户存储异常）' };
+        return;
+      }
+      const currentFingerprint = buildAccountFingerprint(read.accounts);
+      this.backupStatus = {
+        available: true,
+        lastExportAt: formatTime(meta.lastExportAt),
+        exportedCount: meta.exportedCount || 0,
+        changed: currentFingerprint !== meta.fingerprint,
+      };
+    },
+    // 读取现有账户：区分键不存在（正常空）与存储损坏（报错）。
+    // 返回 { ok, accounts, error }。ok=false 时调用方必须终止，不按空数组继续。
+    readExistingAccounts() {
+      let stored;
+      try {
+        stored = uni.getStorageSync('accounts');
+      } catch (e) {
+        return { ok: false, error: '读取账户存储失败：' + (e.message || e) };
+      }
+      if (stored === '' || stored === null || stored === undefined) {
+        // 键不存在，视为空账户列表（正常）
+        return { ok: true, accounts: [] };
+      }
+      if (!Array.isArray(stored)) {
+        // 存在但非数组，损坏
+        return { ok: false, error: '账户存储数据结构异常（非数组），已终止' };
+      }
+      if (stored.length > MAX_ACCOUNTS) {
+        return { ok: false, error: '账户存储数量异常（超过上限），已终止' };
+      }
+      return { ok: true, accounts: stored };
+    },
+
+    // 创建备份输入处理（不用 v-model，真机兼容）
+    onExportPasswordInput(event) {
+      this.exportPassword = event.detail.value;
+    },
+    onExportPasswordConfirmInput(event) {
+      this.exportPasswordConfirm = event.detail.value;
+    },
+    onRestorePasswordInput(event) {
+      this.restorePassword = event.detail.value;
+    },
+
+    // 创建备份
+    onCreateBackup() {
+      if (this.busy) return;
+      // 校验密码
+      if (!this.exportPassword) {
+        this.setMessage('请输入备份密码', 'error');
+        return;
+      }
+      if (this.exportPassword !== this.exportPasswordConfirm) {
+        this.setMessage('两次输入的密码不一致', 'error');
+        return;
+      }
+      // 读取现有账户
+      const read = this.readExistingAccounts();
+      if (!read.ok) {
+        this.setMessage(read.error, 'error');
+        return;
+      }
+      if (read.accounts.length === 0) {
+        this.setMessage('没有可备份的账户', 'error');
+        return;
+      }
+
+      this.busy = true;
+      this.busyKind = 'export';
+      this.setMessage('正在加密…', '');
+
+      let backup;
+      try {
+        backup = createBackup(this.exportPassword, read.accounts, { randomBytes: getRandomBytes });
+      } catch (e) {
+        this.busy = false;
+        this.busyKind = '';
+        const code = e instanceof BackupError ? e.code : '';
+        this.setMessage('加密失败' + (code ? '（' + code + '）' : '') + '，未导出', 'error');
+        this.clearPasswords();
+        return;
+      }
+
+      this.setMessage('加密完成，请选择保存位置…', '');
+      const json = JSON.stringify(backup);
+      const accountCount = read.accounts.length;
+
+      pickFileForSave('my-auth-backup.mabak', json, (res) => {
+        this.busy = false;
+        this.busyKind = '';
+        if (res.cancelled) {
+          this.setMessage('已取消，未导出', '');
+          this.clearPasswords();
+          return;
+        }
+        if (res.error) {
+          this.setMessage('写入失败：' + res.error + '（原账户不变）', 'error');
+          this.clearPasswords();
+          return;
+        }
+        if (!res.verified) {
+          this.setMessage('写入后读回验证未通过，未记录导出状态', 'error');
+          this.clearPasswords();
+          return;
+        }
+        // 读回一致才更新导出状态（backup_meta）。
+        // 文件已导出但状态记录失败时，两种结果分别说明。
+        let metaWritten = false;
+        try {
+          const fingerprint = buildAccountFingerprint(read.accounts);
+          uni.setStorageSync(BACKUP_META_KEY, {
+            lastExportAt: new Date().toISOString(),
+            exportedCount: accountCount,
+            fingerprint,
+          });
+          metaWritten = true;
+        } catch (_) {
+          // backup_meta 写入失败不影响导出文件本身，仅状态记录缺失
+        }
+        if (metaWritten) {
+          this.setMessage('导出成功，' + res.bytes + ' 字节，读回验证通过', 'ok');
+          this.refreshBackupStatus();
+        } else {
+          this.setMessage('导出成功（' + res.bytes + ' 字节），但状态记录失败，备份状态不可用', 'ok');
+        }
+        this.clearPasswords();
+      });
+    },
+
+    // 恢复：选择文件
+    onSelectFile() {
+      if (this.busy) return;
+      // 重置恢复状态
+      this.preview = null;
+      this.restorePassword = '';
+      this.restoreFileContent = '';
+      this.restoreFileBytes = 0;
+      this.setMessage('', '');
+
+      this.busy = true;
+      this.busyKind = 'export';
+      pickFileForRead((res) => {
+        this.busy = false;
+        this.busyKind = '';
+        if (res.cancelled) {
+          this.setMessage('已取消选择文件', '');
+          return;
+        }
+        if (res.error) {
+          this.setMessage('读取文件失败：' + res.error + '（原账户不变）', 'error');
+          return;
+        }
+        this.restoreFileContent = res.content;
+        this.restoreFileBytes = res.bytes;
+        this.restoreStep = 'fileSelected';
+        this.setMessage('已读取 ' + res.bytes + ' 字节，请输入密码', '');
+      });
+    },
+
+    // 恢复：解密预览（不写存储）
+    onDecryptPreview() {
+      if (this.busy) return;
+      if (!this.restoreFileContent) {
+        this.setMessage('请先选择备份文件', 'error');
+        return;
+      }
+      if (!this.restorePassword) {
+        this.setMessage('请输入备份密码', 'error');
+        return;
+      }
+
+      this.busy = true;
+      this.busyKind = 'decrypt';
+      this.setMessage('正在解密…', '');
+
+      let result;
+      try {
+        result = openBackup(this.restorePassword, this.restoreFileContent);
+      } catch (e) {
+        this.busy = false;
+        this.busyKind = '';
+        const code = e instanceof BackupError ? e.code : '';
+        const friendly = code === 'PASSWORD_OR_CORRUPT'
+          ? '密码错误或备份文件已损坏'
+          : code === 'FORMAT_INVALID'
+            ? '备份文件格式无效'
+            : code === 'VERSION_UNSUPPORTED'
+              ? '备份版本不支持，请升级应用'
+              : '解密失败';
+        this.setMessage(friendly + '（原账户不变）', 'error');
+        return;
+      }
+
+      // 解密成功，预览合并结果（不写存储）
+      const read = this.readExistingAccounts();
+      if (!read.ok) {
+        this.busy = false;
+        this.busyKind = '';
+        this.setMessage(read.error, 'error');
+        return;
+      }
+      const merge = mergeAccounts(read.accounts, result.accounts);
+      this.preview = {
+        added: merge.added,
+        duplicates: merge.duplicates,
+        decryptedCount: result.accounts.length,
+      };
+      this.busy = false;
+      this.busyKind = '';
+      this.restoreStep = 'previewed';
+      this.setMessage('解密成功：备份含 ' + result.accounts.length + ' 个账户，可新增 ' + merge.added + ' 个', '');
+    },
+
+    // 恢复：确认合并（写入前重新读取现有账户）
+    onConfirmMerge() {
+      if (this.busy) return;
+      if (!this.preview) return;
+
+      this.busy = true;
+      this.busyKind = 'merge';
+      this.setMessage('正在合并…', '');
+
+      // 写入前重新读取现有账户，避免预览期间的数据变化被覆盖
+      const read = this.readExistingAccounts();
+      if (!read.ok) {
+        this.busy = false;
+        this.busyKind = '';
+        this.setMessage(read.error + '（原账户不变）', 'error');
+        return;
+      }
+
+      // 重新解密（文件内容仍在内存）+ 合并
+      let result;
+      try {
+        result = openBackup(this.restorePassword, this.restoreFileContent);
+      } catch (e) {
+        this.busy = false;
+        this.busyKind = '';
+        this.setMessage('重新解密失败（原账户不变）', 'error');
+        return;
+      }
+
+      // 重新分配 id：备份里的 id 可能与现有冲突（去重键是 secret 不是 id）
+      const baseId = Date.now();
+      const reid = result.accounts.map((acc, i) => ({ ...acc, id: baseId + i }));
+      const merge = mergeAccounts(read.accounts, reid);
+
+      // 先持久化成功再提示（复用 home 约定）
+      try {
+        uni.setStorageSync('accounts', merge.merged);
+      } catch (e) {
+        this.busy = false;
+        this.busyKind = '';
+        this.setMessage('写入存储失败：' + (e.message || e) + '（原账户不变）', 'error');
+        this.clearPasswords();
+        return;
+      }
+      this.busy = false;
+      this.busyKind = '';
+      this.setMessage('恢复完成：新增 ' + merge.added + ' 个，跳过 ' + merge.duplicates.length + ' 个重复，当前共 ' + merge.merged.length + ' 个', 'ok');
+      // 重置恢复状态
+      this.preview = null;
+      this.restoreStep = 'idle';
+      this.restoreFileContent = '';
+      this.restoreFileBytes = 0;
+      this.clearPasswords();
+      // 恢复后账户变更，刷新备份状态（指纹会变化，显示"有变更"）
+      this.refreshBackupStatus();
+    },
+
+    onCancelRestore() {
+      if (this.busy) return;
+      this.preview = null;
+      this.restoreStep = 'idle';
+      this.restoreFileContent = '';
+      this.restoreFileBytes = 0;
+      this.restorePassword = '';
+      this.setMessage('已取消恢复（原账户不变）', '');
     },
   },
 };
@@ -240,13 +445,40 @@ export default {
 .title {
   font-size: 20px;
   font-weight: bold;
+  margin-bottom: 16px;
+}
+.section {
+  background-color: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.section-title {
+  font-size: 16px;
+  font-weight: bold;
   margin-bottom: 8px;
+  display: block;
 }
 .desc {
   font-size: 12px;
   color: #666;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   line-height: 1.6;
+  display: block;
+}
+.warning {
+  font-size: 12px;
+  color: #d93025;
+  margin-bottom: 12px;
+  display: block;
+}
+.input {
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background-color: #f0f0f5;
+  font-size: 14px;
+  margin-bottom: 10px;
 }
 .btn {
   margin-bottom: 10px;
@@ -269,23 +501,24 @@ export default {
   color: #007aff;
   border: 1px solid #007aff;
 }
-.section-title {
-  margin-top: 16px;
-  margin-bottom: 8px;
-  font-size: 14px;
-  font-weight: bold;
+.info {
+  font-size: 13px;
   color: #333;
-}
-.result-list {
-  background-color: #fff;
-  border-radius: 8px;
-  padding: 12px;
-}
-.result-line {
+  margin-bottom: 10px;
   display: block;
-  font-size: 12px;
-  color: #333;
-  line-height: 1.8;
-  font-family: monospace;
+}
+.message {
+  font-size: 13px;
+  padding: 12px;
+  border-radius: 8px;
+  line-height: 1.6;
+}
+.message.ok {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+.message.error {
+  background-color: #ffebee;
+  color: #c62828;
 }
 </style>

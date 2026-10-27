@@ -8,7 +8,7 @@
 // - 安全随机源不可用时明确报错并禁止导出（不降级 Math.random）。
 //
 // 关键正确性点：
-// - PBKDF2 显式 iterations（crypto-js 默认 1），hasher 用 SHA256。
+// - PBKDF2 显式 iterations=100000（crypto-js@4.2.0 默认 250000，我们用 100000 平衡移动端性能，单次约 2.7s），hasher 用 SHA256。
 // - AES 传 WordArray 密钥而非字符串，避免 OpenSSL 再派生。
 // - 派生 512 bit 拆 encKey(256) + macKey(256)。
 // - MAC 覆盖 header + ciphertext，恒定时间比较。
@@ -19,7 +19,8 @@ import { serializeForBackup } from './backup-merge.js';
 
 const FORMAT = 'my-auth-backup';
 const VERSION = 1;
-const ITERATIONS = 100000;
+const ITERATIONS = 100000; // V1 唯一生成的迭代次数
+const SUPPORTED_ITERATIONS = 100000; // V1 恢复端唯一接受的迭代次数（与 ITERATIONS 一致）
 const SALT_BYTES = 16;
 const IV_BYTES = 16;
 const PBKDF2_KEY_SIZE_WORDS = 16;
@@ -31,6 +32,29 @@ export class BackupError extends Error {
     super(message);
     this.name = 'BackupError';
     this.code = code;
+  }
+}
+
+// 参数校验：派生前拒绝异常输入，避免异常计算量或格式错误导致 DoS/未定义行为。
+function assertPassword(password) {
+  if (typeof password !== 'string' || password.length === 0) {
+    throw new BackupError('INVALID_PASSWORD', '密码必须是非空字符串');
+  }
+}
+
+function assertIterations(value) {
+  // V1 恢复端只接受 100000（与生成端一致），不接受任意正整数。
+  // 从文件读的 iterations 可能是 number 或 string，统一转 number 再校验类型+精确值。
+  const n = Number(value);
+  if (!Number.isInteger(n) || n !== SUPPORTED_ITERATIONS) {
+    throw new BackupError('FORMAT_INVALID', '迭代次数不被支持');
+  }
+  return n;
+}
+
+function assertWordArrayBytes(wa, expectedBytes, fieldName) {
+  if (!wa || wa.sigBytes !== expectedBytes) {
+    throw new BackupError('FORMAT_INVALID', `${fieldName} 字节数不正确`);
   }
 }
 
@@ -111,6 +135,7 @@ function resolveRandom(source, nBytes) {
 // options.randomBytes: (nBytes) => WordArray，可选。不传则用默认 Web Crypto 源；
 //   任意源不可用都抛 NO_SECURE_RANDOM 并禁止导出（不降级）。
 export function createBackup(password, accounts, options = {}) {
+  assertPassword(password);
   if (!Array.isArray(accounts) || accounts.length === 0) {
     throw new BackupError('EMPTY_BACKUP', '没有可备份的账户');
   }
@@ -161,6 +186,7 @@ export function createBackup(password, accounts, options = {}) {
 // 打开加密备份。password 错误、文件损坏或版本不支持时抛 BackupError，绝不返回部分账户。
 // backup 可传对象或 JSON 字符串。openBackup 不需要随机数。
 export function openBackup(password, backup) {
+  assertPassword(password);
   let obj;
   if (typeof backup === 'string') {
     try {
@@ -192,10 +218,11 @@ export function openBackup(password, backup) {
     throw new BackupError('FORMAT_INVALID', '备份文件字段缺失或损坏');
   }
 
-  const iterations = Number(kdf.iterations);
-  if (!Number.isFinite(iterations) || iterations <= 0) {
-    throw new BackupError('FORMAT_INVALID', '迭代次数无效');
-  }
+  // 校验 salt/iv 字节数，防止恶意文件用错误长度参数派生
+  assertWordArrayBytes(salt, SALT_BYTES, 'salt');
+  assertWordArrayBytes(iv, IV_BYTES, 'iv');
+
+  const iterations = assertIterations(kdf.iterations);
 
   const { encKey, macKey } = deriveKeys(password, salt, iterations);
 

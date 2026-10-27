@@ -107,13 +107,15 @@ test('tampered salt is rejected', () => {
   );
 });
 
-test('tampered iterations is rejected', () => {
+test('tampered iterations is rejected with FORMAT_INVALID', () => {
   const backup = createBackup(PASSWORD, [sampleAccount()]);
   const tampered = clone(backup);
   tampered.kdf.iterations = 99999;
+  // V1 只接受 100000；99999 在派生前被 assertIterations 拒绝（FORMAT_INVALID），
+  // 不再像旧逻辑那样继续派生后 MAC 失败（PASSWORD_OR_CORRUPT）
   assert.throws(
     () => openBackup(PASSWORD, tampered),
-    (err) => err instanceof BackupError && err.code === 'PASSWORD_OR_CORRUPT',
+    (err) => err instanceof BackupError && err.code === 'FORMAT_INVALID',
   );
 });
 
@@ -248,4 +250,143 @@ test('createBackup uses injected random source for salt and iv', () => {
   assert.equal(fixedSalt.kdf.salt, '00112233445566778899aabbccddeeff');
   assert.equal(fixedSalt.cipher.iv, '00112233445566778899aabbccddeeff');
   assert.equal(fixedSalt.ciphertext, again.ciphertext);
+});
+
+// 参数校验回归测试：派生前拒绝异常输入，避免 DoS 或未定义行为。
+// 不执行超大迭代——assertIterations 在 deriveKeys 之前调用，超大值在派生前即被拒绝。
+
+test('createBackup rejects empty password with INVALID_PASSWORD', () => {
+  assert.throws(
+    () => createBackup('', [sampleAccount()]),
+    (err) => err instanceof BackupError && err.code === 'INVALID_PASSWORD',
+  );
+});
+
+test('createBackup rejects non-string password with INVALID_PASSWORD', () => {
+  assert.throws(
+    () => createBackup(null, [sampleAccount()]),
+    (err) => err instanceof BackupError && err.code === 'INVALID_PASSWORD',
+  );
+  assert.throws(
+    () => createBackup(12345, [sampleAccount()]),
+    (err) => err instanceof BackupError && err.code === 'INVALID_PASSWORD',
+  );
+  assert.throws(
+    () => createBackup(undefined, [sampleAccount()]),
+    (err) => err instanceof BackupError && err.code === 'INVALID_PASSWORD',
+  );
+});
+
+test('openBackup rejects empty password with INVALID_PASSWORD', () => {
+  const backup = createBackup(PASSWORD, [sampleAccount()]);
+  assert.throws(
+    () => openBackup('', backup),
+    (err) => err instanceof BackupError && err.code === 'INVALID_PASSWORD',
+  );
+});
+
+test('openBackup rejects non-string password with INVALID_PASSWORD', () => {
+  const backup = createBackup(PASSWORD, [sampleAccount()]);
+  assert.throws(
+    () => openBackup(null, backup),
+    (err) => err instanceof BackupError && err.code === 'INVALID_PASSWORD',
+  );
+});
+
+test('openBackup rejects iterations != 100000 with FORMAT_INVALID', () => {
+  const backup = createBackup(PASSWORD, [sampleAccount()]);
+  // V1 只接受 100000；篡改为 99999 应被拒绝
+  const tampered = {
+    ...backup,
+    kdf: { ...backup.kdf, iterations: 99999 },
+  };
+  assert.throws(
+    () => openBackup(PASSWORD, tampered),
+    (err) => err instanceof BackupError && err.code === 'FORMAT_INVALID',
+  );
+});
+
+test('openBackup rejects oversized iterations with FORMAT_INVALID', () => {
+  const backup = createBackup(PASSWORD, [sampleAccount()]);
+  const tampered = {
+    ...backup,
+    kdf: { ...backup.kdf, iterations: 100000001 },
+  };
+  assert.throws(
+    () => openBackup(PASSWORD, tampered),
+    (err) => err instanceof BackupError && err.code === 'FORMAT_INVALID',
+  );
+});
+
+test('openBackup does not call PBKDF2 when iterations is rejected', () => {
+  const backup = createBackup(PASSWORD, [sampleAccount()]);
+  const tampered = { ...backup, kdf: { ...backup.kdf, iterations: 99999 } };
+
+  // spy：拦截 CryptoJS.PBKDF2，确认异常 iterations 在派生前被拒绝，不执行 PBKDF2
+  const originalPbkdf2 = CryptoJS.PBKDF2;
+  let pbkdf2Called = false;
+  CryptoJS.PBKDF2 = function (...args) {
+    pbkdf2Called = true;
+    return originalPbkdf2.apply(CryptoJS, args);
+  };
+
+  try {
+    assert.throws(
+      () => openBackup(PASSWORD, tampered),
+      (err) => err instanceof BackupError && err.code === 'FORMAT_INVALID',
+    );
+    assert.equal(pbkdf2Called, false, 'PBKDF2 must not be called when iterations is rejected');
+  } finally {
+    CryptoJS.PBKDF2 = originalPbkdf2;
+  }
+});
+
+test('openBackup rejects non-integer iterations with FORMAT_INVALID', () => {
+  const backup = createBackup(PASSWORD, [sampleAccount()]);
+  const tampered = {
+    ...backup,
+    kdf: { ...backup.kdf, iterations: 1.5 },
+  };
+  assert.throws(
+    () => openBackup(PASSWORD, tampered),
+    (err) => err instanceof BackupError && err.code === 'FORMAT_INVALID',
+  );
+});
+
+test('openBackup rejects non-numeric iterations with FORMAT_INVALID', () => {
+  const backup = createBackup(PASSWORD, [sampleAccount()]);
+  const tampered = {
+    ...backup,
+    kdf: { ...backup.kdf, iterations: 'abc' },
+  };
+  assert.throws(
+    () => openBackup(PASSWORD, tampered),
+    (err) => err instanceof BackupError && err.code === 'FORMAT_INVALID',
+  );
+});
+
+test('openBackup rejects salt with wrong byte count with FORMAT_INVALID', () => {
+  const backup = createBackup(PASSWORD, [sampleAccount()]);
+  // salt 应为 16 字节（32 hex），改为 2 字节
+  const tampered = {
+    ...backup,
+    kdf: { ...backup.kdf, salt: 'aabb' },
+  };
+  assert.throws(
+    () => openBackup(PASSWORD, tampered),
+    (err) => err instanceof BackupError && err.code === 'FORMAT_INVALID',
+  );
+});
+
+test('openBackup rejects iv with wrong byte count with FORMAT_INVALID', () => {
+  const backup = createBackup(PASSWORD, [sampleAccount()]);
+  // iv 应为 16 字节（32 hex），改为 4 字节
+  const tampered = {
+    ...backup,
+    cipher: { ...backup.cipher, iv: '00112233' },
+  };
+  assert.throws(
+    () => openBackup(PASSWORD, tampered),
+    (err) => err instanceof BackupError && err.code === 'FORMAT_INVALID',
+  );
 });

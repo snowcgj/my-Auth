@@ -16,10 +16,11 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 ## 3. 当前状态
 
 - **最新提交**：见 `git log --oneline -3`（本次阶段存档含代码与文档两次提交）
-- **测试**：`cd my-auth/my-auth && npm test` → **62 项通过**（totp-core 9 + otpauth 10 + account 8 + backup-merge 16 + backup-crypto 19，含 Node crypto 独立对照），耗时约 63s（PBKDF2 十万次迭代）
+- **测试**：`cd my-auth/my-auth && npm test` → **73 项通过**（totp-core 9 + otpauth 10 + account 8 + backup-merge 16 + backup-crypto 30，含 Node crypto 独立对照 + 参数校验防御 + spy 验证不执行派生），耗时约 81s（PBKDF2 十万次迭代）
 - **已完成**：
   - 第一批稳定性重构 + 核心体验（搜索/复制/置顶/删除确认）+ 评审修订批，Android 真机核心流程回归通过
-  - **加密备份最小验证链路（2026-10-26 ~ 10-27）**：加密核心（AES-256-CBC + PBKDF2 + HMAC，crypto-js）、合并逻辑（skip）、平台适配（Android SecureRandom + SAF 文件 IO）、真机验证页跑通导出/恢复/合并写回。详见 `.ai/plans/2026-10-26-encrypted-backup.md` 与 `.ai/decisions/2026-10-26-encrypted-backup.md`
+  - **加密备份最小验证链路（2026-10-26 ~ 10-27）**：加密核心 + 合并逻辑 + 平台适配（SecureRandom + SAF）+ 真机验证页跑通。详见 `.ai/plans/2026-10-26-encrypted-backup.md` 与 `.ai/decisions/2026-10-26-encrypted-backup.md`
+  - **批次 C 正式 UI（2026-10-27，真机验收通过）**：`backup.vue` 重写为正式备份与恢复流程（密码二次确认、恢复预览、确认合并、读取失败防御、防重复操作、1MB 文件上限、备份状态展示）；`backup-crypto.js` 加参数校验（password 类型、iterations 精确接受 100000、salt/iv 字节数）；`platform-file.js` 加防重复操作 + 大小上限统一命名。8 项 Android 真机测试全部通过。
 - **逻辑模块**（纯逻辑，运行时不依赖 `uni.*`/Node `Buffer`/`crypto`）：
   - `utils/totp-core.js`：RFC 6238 TOTP，`generateTOTP({secret, timestampSeconds, digits, period, algorithm})`，仅 SHA1、digits 6/8、period 30/60
   - `utils/otpauth.js`：`parseOtpAuthUri(uri)`，参数按名读取+URL 解码，拒绝 HOTP/SHA256/SHA512
@@ -31,7 +32,7 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
   - `utils/platform-file.js`：`pickFileForSave`/`pickFileForRead`/`writeSafJsonVerified`，Android 走 SAF（`ACTION_CREATE/OPEN_DOCUMENT` + `ContentResolver`），逐字节 `write(int)`/`read()` 绕开数组参数桥接问题
 - **页面/组件**：
   - `pages/home/home.vue`：账户列表、扫码、增删、本地存储；`onShow` 重载 accounts（任何存储变更切回首页即反映）
-  - `pages/backup/backup.vue`：**最小真机验证页**（非正式 UI），5+1 按钮验证加密往返/SAF IO/合并写回；用固定测试密码与演示账户 `JBSWY3DPEHPK3PXP`，导出硬编码 `testAccount()` 不读真实存储
+  - `pages/backup/backup.vue`：**正式备份与恢复流程**（批次 C 代码完成，待真机验收）。创建备份读真实 accounts + 密码二次确认 + SAF 导出读回一致才写 backup_meta；恢复选文件→输密码→解密预览新增/重复→确认才合并→写入前重新读取现有账户；默认 skip 重复；读取失败/取消/错密码/损坏/写入失败均不改原账户；busy 防重复；不记录密码/账户/完整 URI
   - `components/AccountItem.vue`：`<text>⋮</text>` 替代 `<uni-icons>`（消除每秒告警）
 - **旧实现**：`utils/finial.js` 已被取代、未被主链路引用，暂未删除（待清理）
 
@@ -55,10 +56,9 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 
 ## 6. 未完成 / 后续待办
 
-**加密备份（批次 C/D，待开工）**
-- 批次 C：正式 `backup.vue` UI（创建备份用真实账户与用户输入密码 / 恢复预览 / 合并恢复确认 / 备份状态），替换当前验证页；导出改读真实 `accounts` 存储（当前硬编码 `testAccount()`）。
-- 批次 D：真机回归收尾——错误密码拒绝、用户取消不报成功、原账户不变确认。
-- 读取失败防御：验证页已修（读取失败终止不写回），正式功能沿用并需 review。
+**加密备份（批次 C/D 已完成，异常用例可选补测）**
+- 批次 C 真机验收通过（8 项测试全部通过），批次 D 收尾（错密码/取消/原账户不变）已随批次 C 真机验收合并完成。
+- 尚未覆盖的异常用例（可选）：1MB 上限拒绝（需大文件）、backup_meta 写失败分别说明（需模拟存储失败）、存储损坏检测（需模拟外部篡改）、恢复后备份状态刷新（已实现未真机验证）。
 
 **清理**
 - 删除旧 `utils/finial.js`（确认无引用后）；清理 home.vue 死代码 `saveAccountsToStorage/loadAccountsFromStorage/myfunc`；清理实验性/未用文件。

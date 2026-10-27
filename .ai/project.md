@@ -57,6 +57,18 @@ my-Auth 是一个本地 TOTP 二次验证器，用途类似 Google Authenticator
 - **未完成**：正式备份 UI（用户输入密码、恢复预览、合并确认、备份状态）、导出读真实账户、错误密码拒绝/取消/原账户不变的真机收尾。
 - 技术取舍见 `.ai/decisions/2026-10-26-encrypted-backup.md`；SAF 故障过程与结论见 `.ai/plans/2026-10-26-saf-write-0kb-issue.md`。
 
+### 批次 C 正式 UI 与真机验收（2026-10-27）
+
+在阶段存档基线上完成正式 `backup.vue` UI 并通过 Android 真机验收：
+
+- `backup.vue` 重写为正式备份与恢复流程：创建备份（读真实 accounts + 密码二次确认 + SAF 导出读回一致才写 backup_meta）、恢复（选文件→输密码→解密预览新增/重复→确认才合并→写入前重新读取现有账户）、备份状态展示（最近导出时间/数量/是否有变更，onShow 刷新）。
+- `backup-crypto.js` 加参数校验：password 非空字符串、iterations 精确接受 V1 唯一值 100000（不再接受 1..10M 宽泛范围）、salt/iv 字节数校验。异常参数在 PBKDF2 前拒绝，spy 测试验证不执行派生。
+- `platform-file.js` 加防重复操作（operationInProgress 标志）+ 大小上限统一命名（MAX_EXPORT_BYTES 64KB / MAX_IMPORT_BYTES 1MB）。
+- 三处密码输入改用 uni-app 官方 password 属性（原 `type="password"` 非官方）。
+- `npm test` 升至 **73 项**（含参数校验防御 + spy 验证不执行派生）。
+- **真机验收 8 项全部通过**：创建备份正常、密码不一致拒绝、无账户拒绝、恢复正常全流程、错误密码拒绝、取消选择文件、取消合并、防重复点击。
+- 尚未覆盖的异常用例（可选补测）：1MB 上限拒绝、backup_meta 写失败分别说明、存储损坏检测、恢复后备份状态刷新。
+
 ## 产品方向
 
 1. 先保证扫码、解析、计算和刷新链路正确且可测试。

@@ -130,7 +130,31 @@
 - **批次 B（已完成）**：`utils/backup-crypto.js` 加密模块（方案 A）+ `tests/backup-crypto.test.mjs`（16+3=19 项，含 Node crypto 独立对照）。`npm test` 62 项全通过。
 - **V1（已完成，2026-10-27）**：随机源修复。`backup-crypto.js` 重构为依赖注入 `options.randomBytes`；新增 `platform-random.js`（Android SecureRandom via Native.js）；移除 Math.random 降级；不可用抛 `NO_SECURE_RANDOM` 禁止导出。真机验证 createBackup 成功。
 - **V2（已完成，2026-10-27）**：SAF 文件 IO。新增 `platform-file.js`（`pickFileForSave`/`pickFileForRead`/`writeSafJsonVerified`）；onActivityResult 覆盖写法；逐字节 write(int)/read() 绕开数组参数桥接。真机验证导出 667 字节 verified + 恢复解密 + 合并写回 + home onShow 重载。
-- **批次 C（待开工）**：正式 `backup.vue` UI（创建备份用真实账户与用户输入密码 / 恢复预览 / 合并恢复确认 / 备份状态），替换当前验证页；导出改读真实 `accounts` 存储（当前硬编码 `testAccount()`）；UI 明示"密码无法找回"。
+- **批次 C（已完成，2026-10-27，真机验收通过）**：正式 `backup.vue` UI，分两步实施完成：
+  - **第一步：防御加固**（接入真实账户前必须补齐）
+    1. `backup-crypto.js`：`createBackup`/`openBackup` 派生前校验 `password` 类型非空字符串、`accounts` 是数组、`iterations` 是整数且在支持范围（1..10_000_000）、`salt`/`iv` 字节数正确；异常计算量拒绝并抛错。
+    2. `platform-file.js`：导入文件设大小上限（1MB），超过立即关闭流报错；`pickFileForSave`/`pickFileForRead` 防重复点击与回调生命周期（进行中再次点击忽略）。
+    3. `backup.vue`：读取现有账户失败或数据结构异常立即终止恢复，不按空数组继续；区分存储键不存在（正常空）与存储损坏（报错）。
+    4. 补充回归测试，用小迭代验证拒绝逻辑（不执行超大迭代）。
+  - **第二步：正式用户流程**
+    1. 移除固定测试密码、硬编码演示账户、诊断按钮。
+    2. 创建备份：读真实 `accounts` + 用户输入密码并二次确认 + 明示"密码无法找回"。
+    3. 导出：沿用 SAF 路径，读回一致才更新导出状态。
+    4. 恢复：先验证解密 → 预览新增/重复账户 → 明确确认后才合并 → 写入前重新读取现有账户计算合并结果（避免预览期间数据变化被覆盖）。
+    5. 默认 skip 重复项，不提供整库覆盖。
+    6. 取消、错密码、损坏文件、写入失败均不得改变原账户。
+    7. 提供忙碌状态与防重复操作；不承诺虚假百分比进度。
+    8. 不记录密码、账户对象、备份内容或完整文件 URI。
+  - **同步修正**：文档测试路径、crypto-js 默认迭代次数说明（如有错误）。
+  - **完成后**：跑 `npm test`，给出 Android 人工验收步骤；未执行真机项目标为待验；不自行提交或 push。
+  - **真机验收（2026-10-27，8 项全部通过）**：①创建备份正常（密码输入→加密→SAF 导出→读回验证）②密码不一致拒绝 ③无账户拒绝 ④恢复正常全流程（选文件→解密→预览→确认合并→首页刷新）⑤错误密码拒绝 ⑥取消选择文件 ⑦取消合并（原账户不变）⑧防重复点击。
+  - **收尾改动（2026-10-27）**：
+    1. iterations 收紧：移除 MAX_ITERATIONS=10M 宽泛范围，openBackup 只接受 V1 唯一值 100000（`n !== SUPPORTED_ITERATIONS` 拒绝）；spy 测试确认异常参数在 PBKDF2 前拒绝不执行派生。
+    2. 备份状态展示：backup.vue 加状态区（最近导出时间/导出账户数/导出后是否变更），onShow 刷新 backup_meta + 当前指纹比对；读取失败显示"状态不可用"不伪造；导出成功但 backup_meta 写失败分别说明。
+    3. 三处密码 input 改 uni-app 官方 password 属性（原 `type="password"` 非官方）。
+    4. 文件大小限制统一命名：MAX_EXPORT_BYTES（64KB）/MAX_IMPORT_BYTES（1MB），注释明确两者值与理由（不统一为同一值：导出应小，导入允许略大但要有上限）。
+    5. 文档测试路径与 crypto-js 默认 iterations 说明已修正（见上）。
+  - **尚未覆盖的异常用例**（待补测/可选）：①1MB 上限拒绝（需构造大文件）②backup_meta 写失败分别说明（需模拟存储失败）③存储损坏检测（需模拟存储被外部篡改为非数组）④恢复后 backup_meta 状态刷新（恢复改变了账户，指纹变化，状态应显示"有变更"——已实现 refreshBackupStatus 在 onConfirmMerge 后调用，但未真机验证）。
 - **批次 D（待测）**：真机回归收尾——错误密码拒绝（应报 PASSWORD_OR_CORRUPT）、用户取消另存为/选择文件（应标 cancelled 不报成功）、原账户不变确认。
 - **批次 E（清理）**：删除 home.vue 死代码 `saveAccountsToStorage/loadAccountsFromStorage/myfunc`、旧 `utils/finial.js`、实验性文件（与 HANDOFF §6 清理项合并）。
 
