@@ -8,7 +8,7 @@
 <p align="center">一款离线生成两步验证验证码、支持加密备份的 Android 验证器。</p>
 
 <p align="center">
-  <a href="https://github.com/snowcgj/my-Auth/releases">下载 APK</a> ·
+  <a href="https://github.com/snowcgj/my-Auth/releases/download/v1.0.1/Zhima-1.0.1-20261027.apk">下载 APK</a> ·
   <a href="#使用方法">使用方法</a> ·
   <a href="#数据与安全">数据与安全</a> ·
   <a href="LICENSE">MIT 许可证</a>
@@ -16,7 +16,7 @@
 
 芝码从网站提供的验证二维码添加账户，在手机上生成动态验证码，无需注册芝码账号。它由一个 2024 年的个人项目逐步改造而来，仓库名仍保留为 `my-Auth`，使用 uni-app + Vue 3 开发。
 
-**当前版本：1.0.1。** APK 已完成打包，维护者已反馈 Android 安装与迁移使用正常；GitHub Release 附件仍待上传，上传后可从上方入口下载。[本版说明与校验值](docs/releases/v1.0.1.md)
+**当前版本：1.0.1。** 已于 2026-10-28 发布，维护者已反馈 Android 安装与迁移使用正常。[查看 Release](https://github.com/snowcgj/my-Auth/releases/tag/v1.0.1) · [本版说明与校验值](docs/releases/v1.0.1.md)
 
 ## 界面预览
 

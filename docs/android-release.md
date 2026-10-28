@@ -1,6 +1,6 @@
 # Android 打包与发布
 
-当前候选是 **芝码 1.0.1（101）**，包名 `io.github.snowcgj.myauth`，DCloud AppID 保持 `__UNI__1835605`。APK 已生成，维护者已反馈安装与迁移使用正常；GitHub Release 尚未创建。发布材料见 [v1.0.1](releases/v1.0.1.md)。
+当前发行版是 **芝码 1.0.1（101）**，包名 `io.github.snowcgj.myauth`，DCloud AppID 保持 `__UNI__1835605`。维护者已反馈安装与迁移使用正常；2026-10-28 已在 [GitHub Release](https://github.com/snowcgj/my-Auth/releases/tag/v1.0.1) 发布 APK 和独立校验文件。发布说明见 [v1.0.1](releases/v1.0.1.md)。
 
 ## 打包前先确认身份与数据
 
@@ -51,7 +51,7 @@ Android 配置引用 `my-auth/static/branding/zhima/`：四密度桌面图标为
 
 ## GitHub Release
 
-本轮先准备材料，不自动提交、打标签或发布。正式发布时：
+本版已按用户授权完成提交、推送、v1.0.1标签及Release，标签指向788aaf8。以下为后续发布可参照的流程，本版附件已上传：
 
 1. 审查并提交品牌配置、文档、LICENSE 与演示截图，确认无凭据、真实账户或构建产物进入 Git。标签须对应包含本次 APK 运行代码及资源的提交，不能指向旧版基线。
 2. 创建 `v1.0.1` 标签和 Release，将 [v1.0.1 说明](releases/v1.0.1.md)作为正文，移除其中的“发布准备”提示。

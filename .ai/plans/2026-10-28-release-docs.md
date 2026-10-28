@@ -20,6 +20,10 @@
 
 状态：材料完成，待用户审阅；未提交、推送或发布。
 
+最新结果（用户后续授权，2026-10-28）：提交788aaf8并推送main及v1.0.1标签；Release已公开，https://github.com/snowcgj/my-Auth/releases/tag/v1.0.1。先建草稿上传，确认APK为15473895字节且远端digest为sha256:cb5b87bce606dac797407fc42ca9c30f6963de94f7428de18d7f05de52235dc8、独立校验文件digest亦一致，再公开并设为latest。README/项目/交接记录同步为已发布，2024旧v1.0.0保留。
+
+公开下载复验：不带GitHub API授权直接下载Release APK，SHA256与本地完全一致；更新后的31个文档链接路径/锚点和git diff --check通过。发布结果文档单独补充提交，不移动已发布的v1.0.1标签。
+
 后续授权：用户已明确要求提交、推送、上传 Release，开始执行。先提交包含品牌运行代码、资源、MIT和发布材料的源码，再将 v1.0.1 标签指向该提交；上传成功后更新 README 发布状态。旧 static/app-icons 保留但不纳入提交。官方便携 GitHub CLI 已准备，首次 API 登录需要用户浏览器授权；不读取其他客户端的凭据。
 
 ## 实际结果

@@ -15,6 +15,8 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 
 ## 3. 当前状态
 
+**已正式发布（2026-10-28）**：用户明确授权提交、推送、上传Release后，40个品牌/配置/文档/资源文件提交为788aaf8，main与v1.0.1标签已推送。https://github.com/snowcgj/my-Auth/releases/tag/v1.0.1 已公开，附件Zhima-1.0.1-20261027.apk（15473895字节）和SHA256SUMS-v1.0.1.txt均上传，GitHub远端digest与本地一致。README已改正式下载入口；2024旧v1.0.0 Release保留。官方便携gh位于E:/CodexHome/tools/github-cli，用户已授权，配置目录state；不输出或提取Token。未引用的my-auth/static/app-icons旧导出保留本地未提交，实际资源只引用branding/zhima。下文“未提交/待上传”均是早期阶段记录，以本段为准。
+
 **最新阶段：发布材料审阅（2026-10-28）**：用户确认芝码使用、GitHub迁移与备份收尾已正常，并同意 MIT 和公开演示截图。README 已按使用者优先重整，新增 LICENSE、v1.0.1 说明及独立 SHA256SUMS，docs/android-release.md 更新到真实打包状态；补充云端排队、SDK渠道、AppKey/签名成本。三张新截图 githubpic/zhima-*.png 来自实际Vue组件与公开数据，93项DOM检查通过，设置模拟版本修正为1.0.1；不是Android真机截图。本轮先完成审阅和检查，未执行提交/推送/标签/Release。APK不需因文档更新重打包。详见 .ai/plans/2026-10-28-release-docs.md。
 
 **本地 Android 工具链（2026-10-27）**：用户授权集中放置于 E:/AndroidBuild-myAuth，便于以后删除。JDK17/Gradle8.14.3/SDK36/BuildTools35+36/ADB 已安装并验证；独立原生测试 APK 实际构建和签名核验通过，非 Auth。无全局环境改动；约2.9GiB，使用与清理见该目录 README/VERIFICATION。匹配5.26的 DCloud 离线 SDK 需用户下载，后续仍要接入原生工程、AppKey和生产签名；不能宣称 Auth 本地 APK 已完成。工具与缓存均在仓库外，不提交它们。
