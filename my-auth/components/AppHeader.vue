@@ -6,7 +6,7 @@
       </button>
       <view class="header-copy">
         <view class="title-row">
-          <image v-if="brand" class="brand-icon" src="/static/ui/brand.png" mode="aspectFit" />
+          <image v-if="brand" class="brand-icon" src="/static/branding/zhima/mark-96.png" mode="aspectFit" />
           <text class="header-title" :class="{ 'brand-title': brand }">{{ title }}</text>
         </view>
         <text v-if="subtitle" class="header-subtitle">{{ subtitle }}</text>
@@ -35,7 +35,7 @@ defineEmits(['back']);
 .title-row { display: flex; align-items: center; }
 .brand-icon { width: 28px; height: 30px; margin-right: 9px; }
 .header-title { display: block; font-size: 25px; line-height: 1.25; font-weight: 700; letter-spacing: -.5px; }
-.brand-title { font-family: Arial, sans-serif; font-size: 30px; font-weight: 800; }
+.brand-title { font-size: 28px; font-weight: 800; letter-spacing: 2px; }
 .header-subtitle { display: block; margin-top: 8px; font-size: 12px; color: var(--auth-muted); line-height: 1.5; }
 .back-button { margin-right: 12px; }
 /* 小程序自定义导航给系统胶囊留位，待恢复该端验收时复核。 */

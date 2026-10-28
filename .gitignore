@@ -3,3 +3,12 @@ node_modules/
 
 # Local installation and debug logs
 *.log
+
+# Signing material, encrypted account backups and release binaries
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.mabak
+*.apk
+*.aab

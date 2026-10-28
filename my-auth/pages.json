@@ -4,7 +4,7 @@
       "path": "pages/home/home",
       "style": {
         "navigationStyle": "custom",
-        "navigationBarTitleText": "Auth",
+        "navigationBarTitleText": "芝码",
         "backgroundColor": "#f7f7f2"
       }
     },
@@ -27,7 +27,7 @@
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "Auth",
+    "navigationBarTitleText": "芝码",
     "navigationBarBackgroundColor": "#f7f7f2",
     "backgroundColor": "#f7f7f2"
   },

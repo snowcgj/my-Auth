@@ -259,7 +259,7 @@ export default {
         this.setMessage('加密完成，请选择保存位置…', '');
         await waitForFeedback(() => this.$nextTick());
         if (!this.isOperationCurrent(operation)) return;
-        const res = await new Promise(resolve => pickFileForSave('my-auth-backup.mabak', json, resolve));
+        const res = await new Promise(resolve => pickFileForSave('zhima-backup.mabak', json, resolve));
         if (!this.isOperationCurrent(operation)) return;
         if (res.cancelled) { this.setMessage('已取消，未导出', ''); return; }
         if (res.error) { this.setMessage('写入失败，请重试（原账户不变）', 'error'); return; }

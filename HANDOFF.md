@@ -1,4 +1,4 @@
-# my-Auth 项目 Handoff（2026-10-27）
+# my-Auth 项目 Handoff（2026-10-28）
 
 > 本文件供下一次会话快速接续工作。新会话的 AI 无历史上下文，请先读本文件，再按"启动指引"读取项目内文档。
 
@@ -14,6 +14,16 @@ my-Auth：uni-app + Vue 3 的本地 TOTP 二次验证器（类 Google Authentica
 - 测试：`cd my-auth/my-auth && npm test`（Node 内置 `node:test`，不引入 Vitest）
 
 ## 3. 当前状态
+
+**最新阶段：发布材料审阅（2026-10-28）**：用户确认芝码使用、GitHub迁移与备份收尾已正常，并同意 MIT 和公开演示截图。README 已按使用者优先重整，新增 LICENSE、v1.0.1 说明及独立 SHA256SUMS，docs/android-release.md 更新到真实打包状态；补充云端排队、SDK渠道、AppKey/签名成本。三张新截图 githubpic/zhima-*.png 来自实际Vue组件与公开数据，93项DOM检查通过，设置模拟版本修正为1.0.1；不是Android真机截图。本轮先完成审阅和检查，未执行提交/推送/标签/Release。APK不需因文档更新重打包。详见 .ai/plans/2026-10-28-release-docs.md。
+
+**本地 Android 工具链（2026-10-27）**：用户授权集中放置于 E:/AndroidBuild-myAuth，便于以后删除。JDK17/Gradle8.14.3/SDK36/BuildTools35+36/ADB 已安装并验证；独立原生测试 APK 实际构建和签名核验通过，非 Auth。无全局环境改动；约2.9GiB，使用与清理见该目录 README/VERIFICATION。匹配5.26的 DCloud 离线 SDK 需用户下载，后续仍要接入原生工程、AppKey和生产签名；不能宣称 Auth 本地 APK 已完成。工具与缓存均在仓库外，不提交它们。
+
+**品牌更新（2026-10-27，原生待验）**：用户确认显示名“芝码”，已接入紫色小门/芝麻钥匙孔图标和原生 NinePatch 启动画面，版本 1.0.1(101)。沿用 io.github.snowcgj.myauth、DCloud appid 和云证书，覆盖本次 Auth 版本，2024 年旧版独立保留。源码在 static/branding/zhima，生成器 scripts/generate-brand-assets.mjs；13 PNG 检查、三密度 aapt2 编译、14 SFC、93 模拟 DOM 检查和 HBuilderX 生产资源导出通过。待新 APK 提取图标与冷启动验收；README 重整和 GitHub 发布后置。本轮未提交或推送。见 .ai/plans/2026-10-27-zhima-brand.md 与对应 decisions。
+
+**此前发布结果**：21:06 云端任务已成功，Auth 1.0.0 APK 下载至 unpackage/release/apk，用户安装可用，但图标空白。已证实旧图标生成器未指定 drawImage 目标尺寸，小图仅截得背景；新生成器显式缩放并逐张检查。此前 camera/autofocus uses-feature 重复失败也已修复，不再手工声明这些 feature。不要重新安装 2024 年的 myauth.apk。
+
+**最新 APK（2026-10-28 核查）**：芝码 1.0.1 云任务已于昨晚23:53:36成功，本地 unpackage/release/apk/Zhima-1.0.1-20261027.apk（复制自 __UNI__1835605__20261027224716.apk），15473895字节。aapt2确认芝码/1.0.1(101)/io.github.snowcgj.myauth，签名核验通过且与上一云包一致；最终APK提取四密度图标均有图案，192px目视通过。SHA256 CB5B87BCE606DAC797407FC42CA9C30F6963DE94F7428DE18D7F05DE52235DC8。待用户覆盖安装验收桌面/冷启动/账户保留，再整理README和GitHub发布。README须客观补充DCloud云端排队、离线SDK下载/AppKey/签名的维护成本，用户已明确要求。
 
 **最新批次：背景主题与 README（阶段存档）**：基于 23d7a06 实现首页调色板入口、暖白/雾紫/浅绿配色，三页和页面内弹层统一；独立 ui-theme 偏好，保存失败不切换，不触碰账户与备份。126 项测试（新增 theme 4 项）、14 个 SFC 检查、93 项模拟浏览器交互检查通过。README 已重写，3 张图为公开演示浏览器截图；README.draft 与 theme-prep 保留。Android 重启恢复、短屏与原生暖白露底待验；许可证未决定，未打包或发布。用户已授权本轮本地提交，不推送；提交号见 git log。见 .ai/plans/2026-10-27-background-themes.md 和对应 decisions。
 

@@ -1,6 +1,6 @@
 <template>
   <view class="ui-page home-page" :style="themeStyle">
-    <AppHeader title="Auth" subtitle="你的账户，随时就绪。" brand>
+    <AppHeader title="芝码" subtitle="芝麻开门，验证码就绪。" brand>
       <view class="header-actions"><button class="ui-icon-button" aria-label="切换背景" hover-class="ui-tap" @click="openThemePicker"><AppIcon name="palette" :size="20" /></button><button class="ui-icon-button" aria-label="打开设置" hover-class="ui-tap" @click="openSettings"><AppIcon name="settings" :size="20" /></button></view>
     </AppHeader>
     <view class="ui-content home-content">

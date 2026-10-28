@@ -1,9 +1,9 @@
 {
-    "name" : "my-auth",
+    "name" : "芝码",
     "appid" : "__UNI__1835605",
-    "description" : "",
-    "versionName" : "1.0.0",
-    "versionCode" : "100",
+    "description" : "芝码：离线验证码与加密备份，芝麻开门，登录从容。",
+    "versionName" : "1.0.1",
+    "versionCode" : "101",
     "transformPx" : false,
     /* 5+App特有相关 */
     "app-plus" : {
@@ -12,7 +12,7 @@
         "compilerVersion" : 3,
         "splashscreen" : {
             "alwaysShowBeforeRender" : true,
-            "waiting" : true,
+            "waiting" : false,
             "autoclose" : true,
             "delay" : 0
         },
@@ -24,22 +24,11 @@
         "distribute" : {
             /* android打包配置 */
             "android" : {
+                "packagename" : "io.github.snowcgj.myauth",
                 "permissions" : [
-                    "<uses-permission android:name=\"android.permission.CHANGE_NETWORK_STATE\"/>",
-                    "<uses-permission android:name=\"android.permission.MOUNT_UNMOUNT_FILESYSTEMS\"/>",
-                    "<uses-permission android:name=\"android.permission.VIBRATE\"/>",
-                    "<uses-permission android:name=\"android.permission.READ_LOGS\"/>",
-                    "<uses-permission android:name=\"android.permission.ACCESS_WIFI_STATE\"/>",
-                    "<uses-feature android:name=\"android.hardware.camera.autofocus\"/>",
-                    "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
                     "<uses-permission android:name=\"android.permission.CAMERA\"/>",
-                    "<uses-permission android:name=\"android.permission.GET_ACCOUNTS\"/>",
-                    "<uses-permission android:name=\"android.permission.READ_PHONE_STATE\"/>",
-                    "<uses-permission android:name=\"android.permission.CHANGE_WIFI_STATE\"/>",
-                    "<uses-permission android:name=\"android.permission.WAKE_LOCK\"/>",
-                    "<uses-permission android:name=\"android.permission.FLASHLIGHT\"/>",
-                    "<uses-feature android:name=\"android.hardware.camera\"/>",
-                    "<uses-permission android:name=\"android.permission.WRITE_SETTINGS\"/>"
+                    "<uses-permission android:name=\"android.permission.VIBRATE\"/>",
+                    "<uses-permission android:name=\"android.permission.FLASHLIGHT\"/>"
                 ]
             },
             /* ios打包配置 */
@@ -48,12 +37,21 @@
             },
             /* SDK配置 */
             "sdkConfigs" : {},
+            "splashscreen" : {
+                "androidStyle" : "default",
+                "androidNavigationBarColor" : "#f7f7f2",
+                "android" : {
+                    "hdpi" : "static/branding/zhima/splash-hdpi.9.png",
+                    "xhdpi" : "static/branding/zhima/splash-xhdpi.9.png",
+                    "xxhdpi" : "static/branding/zhima/splash-xxhdpi.9.png"
+                }
+            },
             "icons" : {
                 "android" : {
-                    "hdpi" : "unpackage/res/icons/72x72.png",
-                    "xhdpi" : "unpackage/res/icons/96x96.png",
-                    "xxhdpi" : "unpackage/res/icons/144x144.png",
-                    "xxxhdpi" : "unpackage/res/icons/192x192.png"
+                    "hdpi" : "static/branding/zhima/icon-72.png",
+                    "xhdpi" : "static/branding/zhima/icon-96.png",
+                    "xxhdpi" : "static/branding/zhima/icon-144.png",
+                    "xxxhdpi" : "static/branding/zhima/icon-192.png"
                 },
                 "ios" : {
                     "appstore" : "unpackage/res/icons/1024x1024.png",

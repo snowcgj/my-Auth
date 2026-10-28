@@ -2,7 +2,7 @@
   <view class="ui-page" :style="themeStyle">
     <AppHeader title="设置" back @back="goBack" />
     <view class="ui-content">
-      <view class="identity-panel"><image class="identity-image" src="/static/ui/brand.png" mode="aspectFit" /><view><text class="identity-title">Auth</text><text class="identity-description">验证码在手，登录更从容。</text></view></view>
+      <view class="identity-panel"><image class="identity-image" src="/static/branding/zhima/mark-192.png" mode="aspectFit" /><view><text class="identity-title">芝码</text><text class="identity-description">芝麻开门，登录从容。</text></view></view>
       <text class="ui-section-label">数据</text>
       <view class="settings-group">
         <button class="settings-row" hover-class="ui-tap" @click="openBackup"><view class="row-icon purple-icon"><AppIcon name="lock" :size="21" /></view><view class="row-content"><text class="row-title">备份与恢复</text><text class="row-description">{{ backupSummary.title }}</text></view><AppIcon name="arrow" :size="16" /></button>
@@ -13,7 +13,7 @@
         <button class="settings-row" hover-class="ui-tap" @click="copyProjectLink"><view class="row-icon"><AppIcon name="code" :size="21" /></view><view class="row-content"><text class="row-title">开源项目</text><text class="row-description">复制 GitHub 项目地址</text></view><AppIcon name="copy" :size="16" /></button>
         <button class="settings-row" hover-class="ui-tap" @click="showPrivacy"><view class="row-icon"><AppIcon name="shield" :size="21" /></view><view class="row-content"><text class="row-title">数据与隐私</text><text class="row-description">了解账户如何保存</text></view><AppIcon name="arrow" :size="16" /></button>
       </view>
-      <view class="version-note"><text>Auth · {{ version }}</text><text>离线生成 · 无需注册</text></view>
+      <view class="version-note"><text>芝码 · {{ version }}</text><text>离线生成 · 无需注册</text></view>
     </view>
     <AppDialog :open="!!dialogKind" :title="dialogKind === 'help' ? '使用说明' : '数据与隐私'" :icon="dialogKind === 'help' ? 'info' : 'shield'" @cancel="dialogKind = ''" @confirm="dialogKind = ''">
       <view v-for="item in dialogSections" :key="item.title" class="explanation-section"><text class="explanation-title">{{ item.title }}</text><text class="explanation-copy">{{ item.content }}</text></view>
@@ -34,7 +34,7 @@ import { getThemeStyle, readTheme } from '@/utils/theme.js';
 const themeId = ref(readTheme());
 const themeStyle = computed(() => getThemeStyle(themeId.value));
 const backupSummary=ref({ title:'正在读取备份状态…' });
-const version=ref('1.0.0');
+const version=ref('1.0.1');
 const dialogKind = ref('');
 const notice = ref(null);
 const dialogSections = computed(() => dialogKind.value === 'help' ? [
@@ -56,7 +56,7 @@ onShow(()=>{
   themeId.value = readTheme();
   backupSummary.value=readBackupSummary();
   try {
-    if(typeof uni.getAppBaseInfo==='function') version.value=uni.getAppBaseInfo().appVersion || '1.0.0';
+    if(typeof uni.getAppBaseInfo==='function') version.value=uni.getAppBaseInfo().appVersion || '1.0.1';
   } catch (_) { /* 旧运行容器保留 manifest 基线版本展示。 */ }
 });
 function goBack(){ if (dialogKind.value) dialogKind.value = ''; else uni.navigateBack(); }
@@ -69,7 +69,7 @@ function showPrivacy(){ notice.value?.clear(); dialogKind.value = 'privacy'; }
 <style scoped>
 .identity-panel { display:flex;align-items:center;padding:22px 20px;background:var(--auth-purple);border:1px solid var(--auth-accent-line);border-radius:22px; }
 .identity-image { width:48px;height:50px;margin-right:16px; }
-.identity-title { display:block;font-family:Arial,sans-serif;font-size:26px;font-weight:800; }
+.identity-title { display:block;font-size:26px;letter-spacing:2px;font-weight:800; }
 .identity-description { display:block;margin-top:7px;font-size:12px;color:var(--auth-muted);line-height:1.7; }
 .settings-group { background:var(--auth-surface);border:1px solid var(--auth-line);border-radius:19px;padding:0 15px; }
 .settings-row { display:flex;align-items:center;width:100%;min-height:82px;padding:15px 0;margin:0;background:transparent;border-radius:0;text-align:left;line-height:1.5; }
